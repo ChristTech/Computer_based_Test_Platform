@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Login · CBT{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Login</h2>
+
+  <div class="tabs" style="display:flex;gap:8px;margin-bottom:12px">
+    <div id="tab-student" class="tab active" style="padding:8px 12px;border-radius:6px;cursor:pointer;background:#0b5fff;color:#fff">Student</div>
+    <div id="tab-teacher" class="tab" style="padding:8px 12px;border-radius:6px;cursor:pointer">Teacher</div>
+    <div id="tab-admin" class="tab" style="padding:8px 12px;border-radius:6px;cursor:pointer">Admin</div>
+  </div>
+
+  <div id="studentPane">
+    <p class="small">Enter your name to continue.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input id="student_name" placeholder="Full name" style="flex:1;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <button id="student_continue" class="btn">Continue</button>
+    </div>
+  </div>
+
+  <div id="teacherPane" style="display:none">
+    <p class="small">Teachers: register or login. Registration is subject to admin approval.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input id="teacher_name" placeholder="Name" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <input id="teacher_pw" placeholder="Password" type="password" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <select id="teacher_subject" style="padding:8px;border-radius:6px;border:1px solid #e6eefc;min-width:160px">
+        <option value="">(select subject)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="teacher_login" class="btn">Login</button>
+      <button id="teacher_register" class="btn" style="background:#0a8fef">Register</button>
+    </div>
+    <div id="teacher_msg" class="small" style="margin-top:8px;color:#333"></div>
+  </div>
+
+  <div id="adminPane" style="display:none">
+    <p class="small">Enter admin credentials to access the admin panel.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input id="admin_username" placeholder="Username" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <input id="admin_pw" placeholder="Password" type="password" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <button id="admin_login" class="btn">Admin Login</button>
+    </div>
+    <div id="admin_msg" class="small" style="margin-top:8px;color:#333"></div>
+  </div>
+
+  <div style="margin-top:12px">
+    <a href="/admin" class="link-btn">Admin panel</a>
+  </div>
+</div>
+
+<script>
+const tabStudent = document.getElementById('tab-student');
+const tabTeacher = document.getElementById('tab-teacher');
+const tabAdmin = document.getElementById('tab-admin');
+const studentPane = document.getElementById('studentPane');
+const teacherPane = document.getElementById('teacherPane');
+const adminPane = document.getElementById('adminPane');
+
+tabStudent.onclick = ()=>{
+  tabStudent.style.background='#0b5fff'; tabStudent.style.color='#fff';
+  tabTeacher.style.background=''; tabTeacher.style.color='';
+  tabAdmin.style.background=''; tabAdmin.style.color='';
+  studentPane.style.display='block'; teacherPane.style.display='none'; adminPane.style.display='none';
+}
+
+tabTeacher.onclick = ()=>{
+  tabTeacher.style.background='#0b5fff'; tabTeacher.style.color='#fff';
+  tabStudent.style.background=''; tabStudent.style.color='';
+  tabAdmin.style.background=''; tabAdmin.style.color='';
+  studentPane.style.display='none'; teacherPane.style.display='block'; adminPane.style.display='none';
+}
+
+tabAdmin.onclick = ()=>{
+  tabAdmin.style.background='#0b5fff'; tabAdmin.style.color='#fff';
+  tabStudent.style.background=''; tabStudent.style.color='';
+  tabTeacher.style.background=''; tabTeacher.style.color='';
+  studentPane.style.display='none'; teacherPane.style.display='none'; adminPane.style.display='block';
+}
+
+document.getElementById('student_continue').addEventListener('click', ()=>{
+  const name = document.getElementById('student_name').value.trim();
+  if(!name){ alert('Enter name'); return; }
+  localStorage.setItem('cbt:student_name', name);
+  window.location.href = '/student';
+});
+
+document.getElementById('teacher_login').addEventListener('click', async ()=>{
+  const name = document.getElementById('teacher_name').value.trim();
+  const pw = document.getElementById('teacher_pw').value;
+  if(!name || !pw){ alert('name & password'); return; }
+  const r = await fetch('/api/login_teacher', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, password: pw})});
+  const js = await r.json().catch(()=>({error:'invalid response'}));
+  if(js.ok){ localStorage.setItem('cbt:teacher_token', js.teacher_token); window.location.href='/teacher'; }
+  else { document.getElementById('teacher_msg').innerText = js.error || 'login failed'; }
+});
+
+document.getElementById('teacher_register').addEventListener('click', async ()=>{
+  const name = document.getElementById('teacher_name').value.trim();
+  const pw = document.getElementById('teacher_pw').value;
+  const subject = document.getElementById('teacher_subject').value || '';
+  if(!name || !pw){ alert('name & password'); return; }
+  const r = await fetch('/api/register_teacher', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, password: pw, subject})});
+  const js = await r.json().catch(()=>({error:'invalid response'}));
+  if(js.ok){ document.getElementById('teacher_msg').innerText = 'Registered — pending admin approval.'; } else { document.getElementById('teacher_msg').innerText = js.error || 'register failed'; }
+});
+
+// load subjects
+(async function loadSubjects(){
+  const sel = document.getElementById('teacher_subject');
+  sel.innerHTML = '<option value="">(select subject)</option>';
+  try{
+    const r = await fetch('/api/subjects');
+    if(r.ok){
+      const list = await r.json();
+      if(Array.isArray(list)){
+        list.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s; opt.text = s;
+          sel.appendChild(opt);
+        });
+      }
+    }
+  }catch(e){}
+})();
+
+// Admin Login
+document.getElementById('admin_login').addEventListener('click', async () => {
+  const username = document.getElementById('admin_username').value.trim();
+  const password = document.getElementById('admin_pw').value;
+  
+  if(!username || !password) {
+    document.getElementById('admin_msg').innerText = 'Username and password required';
+    return;
+  }
+
+  document.getElementById('admin_msg').innerText = 'Logging in...';
+  
+  try {
+    const response = await fetch('/api/login_admin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        username: username,
+        password: password
+      })
+    });
+    
+    const data = await response.json();
+    
+    if(response.ok && data.ok) {
+      window.location.href = '/admin';
+    } else {
+      document.getElementById('admin_msg').innerText = data.error || 'Login failed';
+    }
+  } catch(err) {
+    console.error('Login error:', err);
+    document.getElementById('admin_msg').innerText = 'Login request failed';
+  }
+});
+
+// Add session check on page load
+window.addEventListener('load', async () => {
+  try {
+    const r = await fetch('/api/check_admin');
+    const js = await r.json();
+    if(js.is_admin) {
+      window.location.href = '/admin';
+    }
+  } catch(err) {
+    console.error('Failed to check admin session:', err);
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,396 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title|escape }}</title>
+<style>
+:root{--muted:#6b7280;--accent:#0b5fff;--danger:#ef4444;--success:#059669;--bg:#f7fbff;--card-bg:#fff;--shadow:0 6px 18px rgba(2,6,23,0.06)}
+body{font-family:Inter,system-ui,Arial;margin:0;background:var(--bg);color:#0b2540}
+.header{background:var(--card-bg);border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+.header a{color:var(--accent);text-decoration:none;margin-right:12px}
+.container{max-width:980px;margin:24px auto;padding:16px}
+.card{background:var(--card-bg);padding:20px;border-radius:12px;box-shadow:var(--shadow)}
+.question{transition:opacity 0.3s ease, transform 0.3s ease;opacity:0;transform:translateY(10px);animation:fadeIn 0.3s forwards}
+@keyframes fadeIn{to{opacity:1;transform:translateY(0)}}
+.timer{font-weight:600;margin-bottom:16px;color:#0b2540}
+.small{color:var(--muted);font-size:13px}
+.disabled{opacity:.6;pointer-events:none}
+.draft{font-size:13px;color:var(--success);margin-left:8px;transition:color 0.3s}
+.progress-bar{height:10px;background:#eef4ff;border-radius:5px;overflow:hidden;margin-bottom:12px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.05)}
+#progressFill{height:100%;background:var(--accent);transition:width 0.3s ease}
+button{background:var(--accent);color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;transition:background 0.2s, transform 0.1s}
+button:hover{background:#0056b3;transform:translateY(-1px)}
+button:active{transform:translateY(1px)}
+button.nav-btn{background:#fff;border:1px solid var(--accent);color:var(--accent)}
+button.nav-btn:hover{background:var(--accent);color:#fff}
+#reviewBtn{border:1px solid #dbeefe;background:#fff;color:var(--accent);margin-right:8px}
+.question-counter{font-weight:500;margin-bottom:12px;color:var(--muted)}
+.label{display:block;margin:8px 0;cursor:pointer}
+.label input{margin-right:8px}
+#unansweredList{max-height:200px;overflow:auto;border:1px solid #eef4ff;padding:8px;border-radius:6px;background:#fbfdff;margin-top:12px}
+#unansweredList div{margin-bottom:4px;cursor:pointer;color:var(--accent)}
+#unansweredList div:hover{text-decoration:underline}
+.error-notice{background:#fef2f2;border:1px solid var(--danger);padding:12px;border-radius:8px;margin-bottom:16px}
+@media (max-width:600px){.row{flex-direction:column}.nav-buttons{justify-content:center;gap:8px}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <a href="/"><strong>CBT</strong></a>
+      <a href="/student">Student</a>
+      <a href="/teacher">Teacher</a>
+      <a href="/admin">Admin</a>
+    </div>
+    <div class="small">Exam: {{ title|escape }}</div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <div id="errorNotice" class="error-notice small" style="display:none"></div>
+      <div class="row" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="timer">Time remaining: <span id="timer">--:--</span> <span id="draftStatus" class="draft"></span></div>
+          <div class="progress-bar">
+            <div id="progressFill"></div>
+          </div>
+          <div class="small" id="serverNotice"></div>
+        </div>
+        <div>
+          <button id="reviewBtn">Review Unanswered</button>
+          <button id="submitBtn">Submit Answers</button>
+        </div>
+      </div>
+
+      <div id="questionCounter" class="question-counter"></div>
+      <div id="questions" style="margin-top:16px"></div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:20px">
+        <button id="prevBtn" class="btn" style="min-width:100px">Previous</button>
+        <button id="nextBtn" class="btn" style="min-width:100px">Next</button>
+      </div>
+      <div id="unansweredList" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Store JSON data in a script tag to avoid inline syntax errors -->
+  <script id="questions-data" type="application/json">{{ questions|tojson|safe }}</script>
+  <script id="remaining-data" type="application/json">{{ remaining_seconds|tojson|safe }}</script>
+  <script id="token-data" type="application/json">{{ token|escape|tojson|safe }}</script>
+
+<script>
+let questions = [];
+try {
+  const questionsData = document.getElementById('questions-data').textContent;
+  questions = JSON.parse(questionsData);
+  if (!Array.isArray(questions) || questions.length === 0) {
+    throw new Error('Invalid or empty questions data');
+  }
+} catch (e) {
+  console.error('Error parsing questions:', e, 'Raw data:', document.getElementById('questions-data').textContent);
+  document.getElementById('errorNotice').style.display = 'block';
+  document.getElementById('errorNotice').innerText = 'Error loading exam questions. Please try again or contact support.';
+  document.getElementById('questions').style.display = 'none';
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('reviewBtn').disabled = true;
+  document.getElementById('prevBtn').disabled = true;
+  document.getElementById('nextBtn').disabled = true;
+}
+
+let token = '';
+try {
+  token = JSON.parse(document.getElementById('token-data').textContent);
+} catch (e) {
+  console.error('Error parsing token:', e);
+}
+
+let remaining = 0;
+try {
+  remaining = Number(JSON.parse(document.getElementById('remaining-data').textContent));
+  if (isNaN(remaining) || remaining < 0) {
+    throw new Error('Invalid remaining_seconds');
+  }
+} catch (e) {
+  console.error('Error parsing remaining_seconds:', e, 'Raw data:', document.getElementById('remaining-data').textContent);
+  remaining = 0;
+  document.getElementById('errorNotice').style.display = 'block';
+  document.getElementById('errorNotice').innerText += ' Error loading exam timer. Exam may have expired.';
+  document.getElementById('submitBtn').disabled = true;
+}
+
+const timerEl = document.getElementById('timer');
+const qContainer = document.getElementById('questions');
+const submitBtn = document.getElementById('submitBtn');
+const draftStatus = document.getElementById('draftStatus');
+const serverNotice = document.getElementById('serverNotice');
+const progressFill = document.getElementById('progressFill');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const reviewBtn = document.getElementById('reviewBtn');
+const questionCounter = document.getElementById('questionCounter');
+const unansweredList = document.getElementById('unansweredList');
+
+let answers = {}; // qid -> letter (A, B, C, ...)
+let currentQuestionIndex = 0; // Track current question
+const DRAFT_KEY = 'cbt:answers:' + token;
+let draftSavedTimer = null;
+
+// Restore draft (normalize to LETTER values)
+try {
+  const s = localStorage.getItem(DRAFT_KEY);
+  if (s) {
+    const parsed = JSON.parse(s) || {};
+    for (const k of Object.keys(parsed)) {
+      const v = parsed[k];
+      if (v === null || v === '') { delete parsed[k]; continue; }
+      if (typeof v === 'number' || /^\d+$/.test(String(v))) {
+        const idx = Number(v);
+        parsed[k] = String.fromCharCode(65 + idx);
+      } else if (typeof v === 'string') {
+        const s0 = String(v).trim();
+        if (/^[A-Za-z]$/.test(s0)) parsed[k] = s0.toUpperCase();
+        else if (/^\d+$/.test(s0)) parsed[k] = String.fromCharCode(65 + Number(s0));
+        else parsed[k] = s0.toUpperCase();
+      } else {
+        delete parsed[k];
+      }
+    }
+    answers = parsed;
+  }
+} catch (e) {
+  console.error('Error restoring draft:', e);
+}
+
+// Render current question
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'" :'&#39;'}[m]));
+}
+
+function render() {
+  qContainer.innerHTML = '';
+  unansweredList.style.display = 'none';
+  const q = questions[currentQuestionIndex];
+  if (!q) return;
+
+  questionCounter.innerText = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+
+  const div = document.createElement('div');
+  div.className = 'question';
+  let html = `<div><strong>Q${currentQuestionIndex + 1}.</strong> ${escapeHtml(q.question)}</div>`;
+  html += '<div style="margin-top:12px">';
+  (q.choices || []).forEach((ch, i) => {
+    const id = `q_${q.id}_${i}`;
+    const letter = String.fromCharCode(65 + i); // A, B, C, ...
+    html += `<label class="label"><input type="radio" name="r_${q.id}" value="${letter}" id="${id}"> ${letter}. ${escapeHtml(ch)}</label>`;
+  });
+  html += '</div>';
+  div.innerHTML = html;
+  qContainer.appendChild(div);
+
+  // Update navigation buttons
+  prevBtn.disabled = currentQuestionIndex === 0;
+  nextBtn.disabled = currentQuestionIndex === questions.length - 1;
+
+  // Add radio listeners
+  const radios = div.querySelectorAll('input[type="radio"]');
+  radios.forEach(r => {
+    r.addEventListener('change', (ev) => {
+      // store letter (A/B/...)
+      answers[q.id] = String(ev.target.value).toUpperCase();
+      scheduleDraftSave();
+      updateProgress();
+    });
+  });
+
+  // Restore saved choice
+  if (answers[q.id] !== undefined) {
+    const sel = div.querySelector(`input[value="${answers[q.id]}"]`);
+    if (sel) sel.checked = true;
+  }
+}
+if (questions.length > 0) render();
+
+// Navigation
+prevBtn.addEventListener('click', () => {
+  if (currentQuestionIndex > 0) {
+    currentQuestionIndex--;
+    render();
+  }
+});
+nextBtn.addEventListener('click', () => {
+  if (currentQuestionIndex < questions.length - 1) {
+    currentQuestionIndex++;
+    render();
+  }
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'ArrowLeft' && currentQuestionIndex > 0) {
+    currentQuestionIndex--;
+    render();
+  } else if (ev.key === 'ArrowRight' && currentQuestionIndex < questions.length - 1) {
+    currentQuestionIndex++;
+    render();
+  }
+});
+
+// Review unanswered questions
+reviewBtn.addEventListener('click', () => {
+  const unanswered = questions.filter(q => answers[q.id] === undefined);
+  if (unanswered.length === 0) {
+    unansweredList.style.display = 'block';
+    unansweredList.innerHTML = '<div class="small success">All questions answered!</div>';
+    return;
+  }
+  unansweredList.style.display = 'block';
+  unansweredList.innerHTML = '<div class="small">Unanswered questions (click to jump):</div>';
+  unanswered.forEach((q, idx) => {
+    const qIndex = questions.findIndex(que => que.id === q.id);
+    const div = document.createElement('div');
+    div.innerText = `Q${qIndex + 1}: ${q.question.substring(0, 50)}...`;
+    div.addEventListener('click', () => {
+      currentQuestionIndex = qIndex;
+      render();
+    });
+    unansweredList.appendChild(div);
+  });
+});
+
+// Save draft to localStorage
+function saveDraft() {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(answers || {}));
+    draftStatus.innerText = 'Saved';
+    draftStatus.style.color = 'var(--success)';
+  } catch (e) {
+    console.error('Failed to save draft', e);
+    draftStatus.innerText = 'Save failed';
+    draftStatus.style.color = 'var(--danger)';
+  }
+  if (draftSavedTimer) { clearTimeout(draftSavedTimer); draftSavedTimer = null; }
+}
+
+function scheduleDraftSave() {
+  draftStatus.innerText = 'Saving...';
+  draftStatus.style.color = 'var(--muted)';
+  if (draftSavedTimer) clearTimeout(draftSavedTimer);
+  draftSavedTimer = setTimeout(saveDraft, 700);
+}
+
+function updateProgress() {
+  const total = questions.length || 1;
+  const answered = Object.keys(answers).length;
+  const pct = Math.round((answered / total) * 100);
+  progressFill.style.width = pct + '%';
+}
+if (questions.length > 0) updateProgress();
+
+// check for unanswered questions; returns true if user confirmed or all answered
+function checkUnanswered() {
+  const unanswered = questions.filter(q => !answers.hasOwnProperty(q.id));
+  if (unanswered.length === 0) return true;
+  const msg = `You have ${unanswered.length} unanswered question(s). Continue submission?`;
+  return confirm(msg);
+}
+
+// Beforeunload guard
+function beforeUnloadHandler(e) {
+  try {
+    const s = localStorage.getItem(DRAFT_KEY);
+    if (s && Object.keys(JSON.parse(s) || {}).length > 0) {
+      e.preventDefault();
+      e.returnValue = 'You have answers saved locally. Leaving will discard them.';
+      return e.returnValue;
+    }
+  } catch (e) {}
+}
+window.addEventListener('beforeunload', beforeUnloadHandler);
+
+// Timer and auto-submit
+function updateTimer() {
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  timerEl.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  if (remaining <= 0) {
+    lockUI();
+    autoSubmit();
+    clearInterval(timerInterval);
+  }
+  remaining = Math.max(0, remaining - 1);
+}
+
+function lockUI() {
+  document.querySelectorAll('input, button').forEach(el => el.classList.add('disabled'));
+  submitBtn.disabled = true;
+}
+
+async function autoSubmit() {
+  if (!checkUnanswered()) {
+    alert('You have unanswered questions, but time is up. Submitting now.');
+  }
+  try {
+    const payload = { answers };
+    const storedName = localStorage.getItem('cbt:student_name');
+    if (storedName) payload.name = storedName;
+    await fetch('/api/submit/' + token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    console.error('Auto-submit failed:', e);
+  }
+  window.removeEventListener('beforeunload', beforeUnloadHandler);
+  window.location.href = '/results/' + token;
+}
+
+submitBtn.addEventListener('click', async () => {
+  if (remaining <= 0) {
+    serverNotice.innerText = 'Exam time has expired. Answers already submitted.';
+    serverNotice.style.color = 'var(--danger)';
+    return;
+  }
+  if (!checkUnanswered() || !confirm('Submit your answers?')) return;
+  lockUI();
+  try {
+    const payload = { answers };
+    const storedName = localStorage.getItem('cbt:student_name');
+    if (storedName) payload.name = storedName;
+    const res = await fetch('/api/submit/' + token, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
+      window.location.href = '/results/' + token;
+    } else {
+      const js = await res.json().catch(() => ({}));
+      serverNotice.innerText = 'Submit failed: ' + (js.error || res.status);
+      serverNotice.style.color = 'var(--danger)';
+      const retryBtn = document.createElement('button');
+      retryBtn.innerText = 'Retry Submit';
+      retryBtn.addEventListener('click', () => submitBtn.click());
+      serverNotice.appendChild(retryBtn);
+      submitBtn.disabled = false;
+    }
+  } catch (e) {
+    serverNotice.innerText = 'Network error. Please try again.';
+    serverNotice.style.color = 'var(--danger)';
+    const retryBtn = document.createElement('button');
+    retryBtn.innerText = 'Retry Submit';
+    retryBtn.addEventListener('click', () => submitBtn.click());
+    serverNotice.appendChild(retryBtn);
+    submitBtn.disabled = false;
+  }
+});
+
+// Start timer
+if (remaining > 0 && questions.length > 0) {
+  updateTimer();
+  const timerInterval = setInterval(updateTimer, 1000);
+}
+</script>
+</body>
+</html>

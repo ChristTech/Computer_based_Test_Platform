@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Audit logs · CBT{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Audit logs</h2>
+  <p class="small">Recent actions (add/edit/delete uploads). Export as CSV from the API if needed.</p>
+  <div style="margin-top:12px">
+    <button id="refresh" class="link-btn">Refresh</button>
+  </div>
+  <div id="logs" style="margin-top:12px"></div>
+</div>
+
+<script>
+async function loadLogs() {
+  const logsDiv = document.getElementById('logs');
+  logsDiv.innerHTML = 'Loading...';
+
+  try {
+    const response = await fetch('/api/audit_logs');
+    const data = await response.json();
+
+    if (typeof data === 'object' && data !== null) {
+      logsDiv.innerHTML = ''; // Clear "Loading..." message
+
+      for (const date in data) {
+        if (data.hasOwnProperty(date)) {
+          const logs = data[date];
+
+          // Create a date header
+          const dateHeader = document.createElement('h3');
+          dateHeader.textContent = date;
+          logsDiv.appendChild(dateHeader);
+
+          // Create a download button for the date
+          const downloadButton = document.createElement('a');
+          downloadButton.href = `/api/audit_logs?date=${date}&format=csv`;
+          downloadButton.textContent = `Download ${date} logs (CSV)`;
+          downloadButton.classList.add('link-btn');
+          downloadButton.style.marginBottom = '12px';
+          logsDiv.appendChild(downloadButton);
+
+          // Create a container for the logs
+          const logsContainer = document.createElement('div');
+
+          logs.forEach(it => {
+            const div = document.createElement('div');
+            div.style.marginBottom = '8px';
+            const time = new Date(it.ts * 1000).toLocaleString();
+            div.innerHTML = `<div style="padding:10px;border:1px solid #eef4ff;border-radius:8px">
+              <div style="font-weight:600">${escapeHtml(it.action)} — ${escapeHtml(it.teacher_id || '')}</div>
+              <div class="small">${time} • exam: ${escapeHtml(it.exam_id || '')}</div>
+              <pre style="margin-top:8px">${escapeHtml(JSON.stringify(it.details || {}))}</pre>
+            </div>`;
+            logsContainer.appendChild(div);
+          });
+          logsDiv.appendChild(logsContainer);
+        }
+      }
+    } else {
+      logsDiv.innerHTML = '<div class="small">No logs found.</div>';
+    }
+  } catch (error) {
+    logsDiv.innerHTML = `<div class="small error">Error loading logs: ${error}</div>`;
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', loadLogs);
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+loadLogs();
+</script>
+{% endblock %}

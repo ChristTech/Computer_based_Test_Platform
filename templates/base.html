@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}CBT Platform{% endblock %}</title>
+<style>
+:root{
+  --bg:#f7fbff; --card:#fff; --muted:#6b7280; --accent:#0b5fff; --maxw:1100px;
+  --round:8px; --gap:12px;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#0b2540}
+.container{max-width:var(--maxw);margin:20px auto;padding:16px}
+.header{background:var(--card);border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 0 rgba(12,20,50,0.03)}
+.header .nav a{color:var(--accent);text-decoration:none;margin-right:12px;font-weight:600}
+.card{background:var(--card);padding:16px;border-radius:var(--round);box-shadow:0 8px 20px rgba(2,6,23,0.06)}
+.small{color:var(--muted);font-size:13px}
+.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:none;background:var(--accent);color:white;cursor:pointer}
+.link-btn{background:transparent;border:1px solid #dbeefe;color:var(--accent);padding:8px 10px;border-radius:8px}
+.footer{max-width:var(--maxw);margin:20px auto;color:var(--muted);font-size:13px;text-align:center}
+@media (max-width:720px){ .header{flex-direction:column;align-items:flex-start} .header .nav{margin-top:8px} }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div style="display:flex;align-items:center;gap:14px">
+      <a href="/" style="text-decoration:none;color:var(--accent);font-weight:700;font-size:18px">CBT</a>
+      <nav class="nav">
+        <a href="/student">Student</a>
+        <a href="/teacher">Teacher</a>
+        <a href="/admin">Admin</a>
+        <a href="/login">Login</a>
+      </nav>
+    </div>
+    <div class="small">Secure, reliable CBT</div>
+  </div>
+
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+
+  <div class="footer">
+    CBT Platform — built for clarity · <span id="ts"></span>
+  </div>
+
+<script>
+document.getElementById('ts').innerText = new Date().toLocaleString();
+</script>
+</body>
+</html>

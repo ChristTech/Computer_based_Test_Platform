@@ -1,0 +1,11 @@
+question,choice1,choice2,choice3,choice4,answer_index
+"Which component of a computer system is often referred to as the 'brain' of the computer?",Random Access Memory (RAM),Central Processing Unit (CPU),Hard Disk Drive (HDD),Graphics Processing Unit (GPU),1
+"Which of the following is an example of software?",Keyboard,Microsoft Word,Motherboard,Power Supply Unit,1
+"What was the first widely successful graphical user interface (GUI) operating system for personal computers?",Windows 95,MS-DOS,Apple Macintosh OS,Linux,2
+"Which type of hardware component is primarily responsible for storing long-term data even when the computer is powered off?",RAM,CPU Cache,Hard Drive,Graphics Card,2
+"What is the main difference between hardware and software?",Hardware is more expensive than software,Software is physical while hardware is virtual,Hardware is the physical components while software is the programs and instructions,Hardware runs faster than software,2
+"Which operating system is known for being open-source and having multiple distributions?",Windows,Linux,macOS,MS-DOS,1
+"What is the primary function of RAM in a computer system?",To process graphics,To store data permanently,To temporarily store data for active programs,To control the operating system,2
+"Which of the following best describes an operating system?",A piece of hardware that manages computer resources,A software that manages hardware and software resources,A type of computer processor,A physical storage device,1
+"What term describes the connection points where various hardware components can be attached to a computer?",Ports,Programs,Processors,Pixels,0
+"Which development marked a significant advancement in operating system history?",The invention of the mouse,The transition from command-line to graphical user interface,The creation of the first keyboard,The development of the first printer,1

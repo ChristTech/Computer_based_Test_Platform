@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Take Exam</title>
+<style>
+:root{--muted:#6b7280;--accent:#0b5fff}
+body{font-family:Inter,system-ui,Arial;margin:0;background:#f7fbff}
+.header{background:#fff;border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+.header a{color:var(--accent);text-decoration:none;margin-right:12px}
+.container{max-width:980px;margin:24px auto;padding:16px}
+.card{background:#fff;padding:16px;border-radius:8px}
+.exam-row{padding:10px;border:1px solid #eef4ff;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.small{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div><a href="/"><strong>CBT</strong></a><a href="/login">Login</a><a href="/teacher">Teacher</a></div>
+    <div class="small">Student</div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Welcome</h2>
+      <div class="small">Name: <strong id="displayName">-</strong></div>
+
+      <div style="margin-top:12px">
+        <label style="display:block">Select exam
+          <select id="examSelect" style="width:100%;margin-top:8px"></select>
+        </label>
+      </div>
+
+      <div style="margin-top:12px">
+        <button id="startExam" class="btn">Start Exam</button>
+        <div id="studentMsg" class="small" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+document.getElementById('displayName').innerText = localStorage.getItem('cbt:student_name') || '-';
+
+async function loadExams(){
+  const sel = document.getElementById('examSelect'); sel.innerHTML='';
+  const res = await fetch('/api/list_exams'); const js = await res.json();
+  js.forEach(e=>{
+    const opt = document.createElement('option');
+    opt.value = e.id;
+    opt.text = `${e.title} • ${e.duration_minutes}m • ${e.started ? 'OPEN' : 'CLOSED'}`;
+    sel.appendChild(opt);
+  });
+}
+document.getElementById('startExam').addEventListener('click', async ()=>{
+  const exam_id = document.getElementById('examSelect').value;
+  const name = localStorage.getItem('cbt:student_name') || '';
+  if(!name){ alert('Please enter your name on the login page'); window.location.href='/login'; return; }
+  if(!exam_id){ alert('Select exam'); return; }
+  const res = await fetch('/api/start_exam', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({exam_id, student_name: name})});
+  const js = await res.json();
+  if(res.ok && js.url){
+    window.location.href = js.url;
+  }else{
+    document.getElementById('studentMsg').innerText = js.error || 'Could not start exam';
+    if(res.status===403) document.getElementById('studentMsg').innerText += ' — contact your teacher/admin';
+  }
+});
+
+loadExams();
+</script>
+</body>
+</html>
