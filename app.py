@@ -17,6 +17,10 @@ import random
 import docx  # Added for DOCX parsing
 from functools import wraps
 
+import io
+import csv
+import re
+
 # At the top of your file, after the existing imports
 try:
     from docx import Document
@@ -35,6 +39,25 @@ BASE_DIR = os.path.dirname(__file__)
 DB = os.path.join(BASE_DIR, 'cbt.db')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'adminpass')
 ADMIN_USERNAME = 'admin'  # Default admin username
+
+def is_admin_request():
+    """
+    Return True if the request is authenticated as admin.
+    Checks session (logged-in admin) first, then accepts admin_password
+    provided in JSON body or query string for backward compatibility.
+    """
+    if 'admin_token' in session:
+        return True
+    # check JSON payload then query param
+    admin_pass = ''
+    try:
+        if request.json and 'admin_password' in request.json:
+            admin_pass = request.json.get('admin_password') or ''
+        else:
+            admin_pass = request.args.get('admin_password') or ''
+    except Exception:
+        admin_pass = request.args.get('admin_password') or ''
+    return admin_pass == ADMIN_PASSWORD
 
 def init_db():
     conn = sqlite3.connect(DB)
@@ -574,47 +597,92 @@ def submit(token):
 
     # audit: student submission event for admin review/notifications
     try:
-        log_audit('submit_exam', None, exam_id, {'token': token, 'name': name or '', 'score': score, 'total': len(qstate)})
+        # try to include subject for this exam in audit details
+        subj = ''
+        try:
+            conn = db_conn(); c = conn.cursor()
+            c.execute('SELECT t.subject FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
+            er = c.fetchone()
+            subj = (er['subject'] or '').strip() if er and 'subject' in er.keys() else ''
+            conn.close()
+        except Exception:
+            subj = ''
+        log_audit('submit_exam', None, exam_id, {'token': token, 'name': name or '', 'score': score, 'total': len(qstate), 'subject': subj})
     except Exception:
         pass
 
     return jsonify({'score': score, 'total': len(qstate)})
 
+def _sanitize_filename(s: str) -> str:
+    s = (s or '').strip()
+    if not s:
+        return 'unknown'
+    s = s.lower()
+    s = re.sub(r'\s+', '_', s)
+    s = re.sub(r'[^a-z0-9_\-\.]', '', s)
+    return s[:120] or 'unknown'
+
 def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answers_detail=None):
+    # determine subject label (try DB -> exams -> teacher.subject), fallback to exam_id
+    subject_name = ''
+    try:
+        conn = db_conn(); c = conn.cursor()
+        c.execute('SELECT t.subject FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
+        er = c.fetchone()
+        subject_name = (er['subject'] or '').strip() if er and 'subject' in er.keys() else ''
+        conn.close()
+    except Exception:
+        subject_name = ''
+
+    subject_label = _sanitize_filename(subject_name or exam_id)
+
     row = {
-        'name': name,
+        'subject': subject_name or '',
+        'name': name or '',
         'token': token,
         'score': score,
         'total': total,
         'submitted_at': datetime.fromtimestamp(submitted_at).isoformat()
     }
-    fname_xlsx = os.path.join(BASE_DIR, f'results_{exam_id}.xlsx')
-    fname_csv = os.path.join(BASE_DIR, f'results_{exam_id}.csv')
+
+    fname_xlsx = os.path.join(BASE_DIR, f'results_{subject_label}.xlsx')
+    fname_csv = os.path.join(BASE_DIR, f'results_{subject_label}.csv')
+
+    # include answers_detail if present
+    if answers_detail is not None:
+        row['answers_detail'] = json.dumps(answers_detail, ensure_ascii=False)
+
+    # Try XLSX (pandas) and persist to disk so admin can download by subject file
     if pd:
         try:
-            # include answers_detail as JSON string if available
-            if answers_detail is not None:
-                row['answers_detail'] = json.dumps(answers_detail, ensure_ascii=False)
+            df_row = pd.DataFrame([row])
             if os.path.exists(fname_xlsx):
-                df = pd.read_excel(fname_xlsx)
-                df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+                try:
+                    existing = pd.read_excel(fname_xlsx)
+                    df = pd.concat([existing, df_row], ignore_index=True)
+                except Exception:
+                    df = df_row
             else:
-                df = pd.DataFrame([row])
+                df = df_row
             df.to_excel(fname_xlsx, index=False)
+            # also ensure CSV exists for systems that expect CSV
+            try:
+                df.to_csv(fname_csv, index=False)
+            except Exception:
+                pass
             return
         except Exception:
-            pass
-    # CSV fallback: include answers_detail column
+            app.logger.exception("failed to write xlsx for subject %s", subject_label)
+
+    # CSV fallback / append
     write_header = not os.path.exists(fname_csv)
-    fieldnames = ['name','token','score','total','submitted_at']
+    fieldnames = ['subject','name','token','score','total','submitted_at']
     if answers_detail is not None:
         fieldnames.append('answers_detail')
     with open(fname_csv, 'a', newline='', encoding='utf-8') as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         if write_header:
             writer.writeheader()
-        if answers_detail is not None:
-            row['answers_detail'] = json.dumps(answers_detail, ensure_ascii=False)
         writer.writerow(row)
 
 @app.route('/api/results_csv/<exam_id>')
@@ -853,11 +921,10 @@ def set_exam_state():
     data = request.json or {}
     exam_id = data.get('exam_id')
     started = bool(data.get('started'))
-    admin_pass = data.get('admin_password') or ''
-    if admin_pass != ADMIN_PASSWORD:
+    if not is_admin_request():
         return jsonify({'error': 'admin auth required'}), 401
     if not exam_id:
-        return jsonify({'error':'exam_id required'}), 400
+        return jsonify({'error': 'exam_id required'}), 400
     conn = db_conn(); c = conn.cursor()
     c.execute('UPDATE exams SET started=? WHERE id=?', (1 if started else 0, exam_id))
     conn.commit(); conn.close()
@@ -897,10 +964,13 @@ def server_error(e):
 def api_audit_logs():
     """
     Return audit logs, grouped by date. Supports date filter.
+    If format=csv or format=xlsx and date=YYYY-MM-DD is provided,
+    return a downloadable file containing rows: name, score for submit_exam actions.
     """
     exam_id = request.args.get('exam_id')
     teacher_id = request.args.get('teacher_id')
     date_str = request.args.get('date')  # YYYY-MM-DD
+    fmt = (request.args.get('format') or '').lower()
 
     conn = db_conn(); c = conn.cursor()
     q = "SELECT ts, action, teacher_id, exam_id, details FROM audit_logs"
@@ -919,6 +989,7 @@ def api_audit_logs():
             where_clauses.append("ts BETWEEN ? AND ?")
             params.extend([start_ts, end_ts])
         except ValueError:
+            conn.close()
             return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
     if where_clauses:
@@ -927,7 +998,49 @@ def api_audit_logs():
     c.execute(q, tuple(params))
     rows = c.fetchall(); conn.close()
 
-    # Group logs by date
+    # If client requested a file for a specific date, produce name+score file
+    if fmt in ('csv', 'xlsx') and date_str:
+        records = []
+        for r in rows:
+            try:
+                details = json.loads(r['details'] or '{}')
+            except Exception:
+                details = {}
+            if r['action'] == 'submit_exam':
+                name = details.get('name') or ''
+                score = details.get('score')
+                # only include entries that have numeric score
+                try:
+                    score_val = int(score) if score is not None else ''
+                except Exception:
+                    score_val = score
+                records.append({'name': name, 'score': score_val})
+
+        # build download
+        if fmt == 'xlsx' and pd:
+            try:
+                df = pd.DataFrame(records)
+                mem = io.BytesIO()
+                with pd.ExcelWriter(mem, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='audit_logs')
+                mem.seek(0)
+                return send_file(mem,
+                                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                 as_attachment=True,
+                                 download_name=f'audit_logs_{date_str}.xlsx')
+            except Exception:
+                app.logger.exception("failed to build xlsx audit logs for %s", date_str)
+                # fallthrough to CSV
+        # CSV fallback
+        si = io.StringIO()
+        writer = csv.writer(si)
+        writer.writerow(['name', 'score'])
+        for rec in records:
+            writer.writerow([rec.get('name',''), rec.get('score','')])
+        mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
+        return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'audit_logs_{date_str}.csv')
+
+    # Default behavior: grouped JSON by date
     grouped_logs = {}
     for r in rows:
         try:
@@ -936,9 +1049,7 @@ def api_audit_logs():
             details = {}
         log_entry = {'ts': r['ts'], 'action': r['action'], 'teacher_id': r['teacher_id'], 'exam_id': r['exam_id'], 'details': details}
         date = datetime.fromtimestamp(r['ts']).strftime('%Y-%m-%d')
-        if date not in grouped_logs:
-            grouped_logs[date] = []
-        grouped_logs[date].append(log_entry)
+        grouped_logs.setdefault(date, []).append(log_entry)
 
     return jsonify(grouped_logs)
 
@@ -1173,13 +1284,13 @@ def api_subjects_db():
 def approve_teacher():
     """
     Admin approves a pending teacher.
-    Body JSON: { "teacher_id": "...", "admin_password": "..." }
+    Body JSON: { "teacher_id": "..." }
+    Accepts session-based admin or admin_password in request for compatibility.
     Returns teacher_token on success.
     """
     data = request.json or {}
     teacher_id = data.get('teacher_id')
-    admin_pass = data.get('admin_password') or ''
-    if admin_pass != ADMIN_PASSWORD:
+    if not is_admin_request():
         return jsonify({'error': 'admin auth required'}), 401
     if not teacher_id:
         return jsonify({'error': 'teacher_id required'}), 400
@@ -1327,6 +1438,102 @@ def download_exam_results(exam_id):
         writer.writerow(d)
     mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
     return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'results_{exam_id}.csv')
+
+@app.route('/api/download_subject')
+def download_subject():
+    """
+    Download all results for a given subject.
+    Accepts: ?subject=<name>&format=xlsx|csv
+    Requires admin session or admin_password (is_admin_request()).
+    """
+    if not is_admin_request():
+        return jsonify({'error': 'admin auth required'}), 401
+
+    subject = (request.args.get('subject') or '').strip()
+    fmt = (request.args.get('format') or 'xlsx').lower()
+    if not subject:
+        return jsonify({'error': 'subject required'}), 400
+
+    label = _sanitize_filename(subject)
+
+    # prefer an existing per-subject file on disk
+    fname_xlsx = os.path.join(BASE_DIR, f'results_{label}.xlsx')
+    fname_csv = os.path.join(BASE_DIR, f'results_{label}.csv')
+
+    # if client requested xlsx and file exists, serve it
+    if fmt == 'xlsx' and pd and os.path.exists(fname_xlsx):
+        return send_file(fname_xlsx,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True,
+                         download_name=f'results_{label}.xlsx')
+
+    # if csv file exists, serve it (works for both formats as fallback)
+    if os.path.exists(fname_csv):
+        return send_file(fname_csv,
+                         mimetype='text/csv',
+                         as_attachment=True,
+                         download_name=f'results_{label}.csv')
+
+    # otherwise build file from DB (teachers -> exams -> results filtered by subject)
+    conn = db_conn(); c = conn.cursor()
+    try:
+        c.execute('''
+            SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id
+            FROM results r
+            JOIN sessions s ON r.token = s.token
+            LEFT JOIN exams e ON s.exam_id = e.id
+            LEFT JOIN teachers t ON e.teacher_id = t.id
+            WHERE LOWER(TRIM(COALESCE(t.subject,''))) = ?
+            ORDER BY r.submitted_at DESC
+        ''', (subject.lower(),))
+        rows = c.fetchall()
+    finally:
+        conn.close()
+
+    data = []
+    for r in rows:
+        try:
+            answers_detail = json.loads(r['answers_detail'] or '[]')
+        except Exception:
+            answers_detail = r['answers_detail'] or []
+        submitted = ''
+        try:
+            submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
+        except Exception:
+            submitted = ''
+        data.append({
+            'exam_id': r['exam_id'] or '',
+            'token': r['token'],
+            'name': r['name'] or '',
+            'score': r['score'],
+            'total': r['total'] if 'total' in r.keys() else '',
+            'submitted_at': submitted,
+            'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
+        })
+
+    # produce XLSX if requested and pandas available
+    if fmt == 'xlsx' and pd:
+        try:
+            df = pd.DataFrame(data)
+            mem = io.BytesIO()
+            with pd.ExcelWriter(mem, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='results')
+            mem.seek(0)
+            return send_file(mem,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             as_attachment=True,
+                             download_name=f'results_{label}.xlsx')
+        except Exception:
+            app.logger.exception("failed to build xlsx for subject %s", subject)
+
+    # CSV fallback
+    si = io.StringIO()
+    writer = csv.writer(si)
+    writer.writerow(['exam_id','token','name','score','total','submitted_at','answers_detail'])
+    for d in data:
+        writer.writerow([d['exam_id'], d['token'], d['name'], d['score'], d['total'], d['submitted_at'], d['answers_detail']])
+    mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
+    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'results_{label}.csv')
 
 @app.template_filter('datetime')
 def format_datetime(value):

@@ -54,6 +54,9 @@ button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accen
 </style>
 </head>
 <body>
+  {% extends "base.html" %}
+  {% block title %}Teacher · CBT{% endblock %}
+  {% block content %}
   <div class="header">
     <div><a href="/"><strong>CBT</strong></a><a href="/teacher">Teacher</a><a href="/admin">Admin</a></div>
     <div class="small">Signed in: <span id="teacherName">-</span></div>
@@ -191,3 +194,4 @@ loadExams();
 </script>
 </body>
 </html>
+{% endblock %}

@@ -28,6 +28,9 @@ button{padding:8px 10px;border-radius:6px;border:1px solid #dbeefe;background:#f
 </style>
 </head>
 <body>
+{% extends "base.html" %}
+{% block title %}Admin · CBT{% endblock %}
+{% block content %}
 <div class="wrap">
   <div class="card">
     <h2>Admin</h2>
@@ -327,5 +330,26 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
   <button id="logoutBtn" class="btn" style="background:#ef4444">Logout</button>
 </div>
+<script>
+/*
+  Add this script (or merge with existing admin scripts). It expects
+  each subject row/button to include a .download-subject element with
+  data-subject="Subject Name" (or data-format to prefer csv/xlsx).
+  Example button in subject list:
+    <button class="download-subject" data-subject="Mathematics" data-format="xlsx">Download</button>
+*/
+document.addEventListener('click', function(e){
+  const btn = e.target.closest && e.target.closest('.download-subject');
+  if(!btn) return;
+  const subj = (btn.dataset && btn.dataset.subject) || btn.getAttribute('data-subject') || '';
+  const fmt = (btn.dataset && btn.dataset.format) || 'xlsx';
+  if(!subj){ alert('Subject not found'); return; }
+  // open download in new tab/window so browser handles the file save
+  const url = '/api/download_subject?subject=' + encodeURIComponent(subj) + '&format=' + encodeURIComponent(fmt);
+  window.open(url, '_blank');
+});
+</script>
 </body>
 </html>
+{% endblock %}
+

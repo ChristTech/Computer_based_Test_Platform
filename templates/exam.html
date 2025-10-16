@@ -36,6 +36,9 @@ button.nav-btn:hover{background:var(--accent);color:#fff}
 </style>
 </head>
 <body>
+  {% extends "base.html" %}
+  {% block title %}Exam · CBT{% endblock %}
+  {% block content %}
   <div class="header">
     <div>
       <a href="/"><strong>CBT</strong></a>
@@ -394,3 +397,4 @@ if (remaining > 0 && questions.length > 0) {
 </script>
 </body>
 </html>
+{% endblock %}

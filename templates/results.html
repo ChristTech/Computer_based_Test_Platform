@@ -9,16 +9,17 @@
 body,html{margin:0;height:100%;font-family:Inter,system-ui,Arial;background:var(--bg);color:#0b2540}
 .header{background:var(--card-bg);border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
 .header a{color:var(--accent);text-decoration:none;margin-right:12px;font-size:14px}
-.container{max-width:980px;margin:0 auto;padding:16px;display:flex;justify-content:center;align-items:center;height:calc(100vh - 60px)} /* subtract header height */
+.container{max-width:980px;margin:24px auto;padding:16px}
 .card{background:var(--card-bg);padding:20px;border-radius:12px;box-shadow:var(--shadow);transition:opacity 0.3s ease;text-align:center}
 @keyframes fadeIn{to{opacity:1}}
 .card.fade-in{animation:fadeIn 0.3s forwards}
 .small{font-size:13px;color:var(--muted)}
+.success-banner{background:var(--success);color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-weight:600;display:inline-block}
 .score{font-size:18px;font-weight:500;margin:12px 0;color:#0b2540}
 .score strong{font-size:24px;color:var(--accent)}
 .progress-bar{height:10px;background:#eef4ff;border-radius:5px;overflow:hidden;margin:12px 0;box-shadow:inset 0 1px 2px rgba(0,0,0,0.05)}
 .progress-fill{height:100%;background:var(--accent);transition:width 0.5s ease}
-button{background:var(--accent);color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;transition:background 0.2s, transform 0.1s;font-size:14px}
+button{background:var(--accent);color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px}
 button:hover{background:#0056b3;transform:translateY(-1px)}
 button:active{transform:translateY(1px)}
 button.secondary{background:#fff;border:1px solid var(--accent);color:var(--accent)}
@@ -37,154 +38,63 @@ button.secondary:hover{background:var(--accent);color:#fff}
 </style>
 </head>
 <body>
-  <div class="header">
-    <div>
-      <a href="/"><strong>CBT</strong></a>
-      <a href="/student">Student</a>
-      <a href="/teacher">Teacher</a>
-      <a href="/admin">Admin</a>
+  {% extends "base.html" %}
+  {% block title %}Thank you · CBT{% endblock %}
+  {% block content %}
+  <style>
+:root{--muted:#6b7280;--accent:#0b5fff;--danger:#ef4444;--success:#059669;--bg:#f7fbff;--card-bg:#fff;--shadow:0 6px 18px rgba(2,6,23,0.06)}
+.container{max-width:980px;margin:24px auto;padding:16px}
+.card{background:var(--card-bg);padding:20px;border-radius:12px;box-shadow:var(--shadow);transition:opacity 0.3s ease;text-align:center}
+.small{font-size:13px;color:var(--muted)}
+.success-banner{background:var(--success);color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-weight:600;display:inline-block}
+button{background:var(--accent);color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px}
+@media (max-width:600px){.container{padding:12px}}
+</style>
+
+<div class="container">
+  <div class="card" id="resultsCard" style="opacity:1">
+    <div class="success-banner" id="submittedMsg">Submitted successfully</div>
+
+    <h2>Thank you for taking this test!</h2>
+
+    <div style="margin:20px 0;text-align:center">
+      <button id="viewScoreBtn" class="btn" style="min-width:150px">View My Score</button>
     </div>
-  </div>
 
-  <div class="container">
-    <div class="card" id="resultsCard" style="opacity:0">
-      <h2>Thank you for taking this test!</h2>
-      
-      <div style="margin:20px 0;text-align:center">
-        <button id="viewScoreBtn" class="btn" style="min-width:150px">View My Score</button>
-      </div>
-
-      <div id="scorePanel" style="display:none">
-        <div style="text-align:center;margin:20px 0">
-          <div style="font-size:24px;font-weight:600;color:#0b5fff">
-            Score: {{ score }}/{{ total }}
-          </div>
-          <div style="margin-top:8px;color:#666">
-            {% if name %}Submitted by: {{ name }}{% endif %}
-          </div>
-          {% if submitted_at %}
-          <div style="margin-top:4px;color:#666;font-size:14px">
-              Submitted on {{ submitted_at|datetime }}
-          </div>
-          {% endif %}
+    <div id="scorePanel" style="display:none">
+      <div style="text-align:center;margin:20px 0">
+        <div style="font-size:24px;font-weight:600;color:var(--accent)">
+          Score: <span id="scoreDisplay">{{ score|default('') }}/{{ total|default('') }}</span>
         </div>
-
-        {% if answers_detail %}
-        <div style="margin-top:20px">
-          <h3>Questions Review</h3>
-          {% for answer in answers_detail %}
-          <div style="margin:12px 0;padding:12px;border-radius:8px;{{ answer.is_correct and '#ecfdf5' or '#fff7f7' }}">
-            <div style="font-weight:600">Q{{ loop.index }}. {{ answer.question }}</div>
-            <div style="margin-top:8px;color:#666">
-              Your answer: <strong>{{ answer.selected_label }} — {{ answer.selected_text }}</strong>
-            </div>
-            {% if not answer.is_correct %}
-            <div style="margin-top:4px;color:#059669">
-              Correct answer: <strong>{{ answer.correct_label }} — {{ answer.correct_text }}</strong>
-            </div>
-            {% endif %}
-          </div>
-          {% endfor %}
+        <div style="margin-top:8px;color:#666">
+          {% if name %}Submitted by: {{ name }}{% endif %}
+        </div>
+        {% if submitted_at %}
+        <div style="margin-top:4px;color:#666;font-size:14px">
+            Submitted on {{ submitted_at|datetime }}
         </div>
         {% endif %}
       </div>
+
+      <div id="answers" style="margin-top:12px"></div>
     </div>
   </div>
+</div>
 
-  <script id="token-data" type="application/json">{{ token|escape|tojson|safe }}</script>
-
+<script id="token-data" type="application/json">{{ token|default('')|tojson|safe }}</script>
 <script>
-const token = JSON.parse(document.getElementById('token-data').textContent || '""');
-const resultsCard = document.getElementById('resultsCard');
-const loading = document.getElementById('loading');
-const resultsContent = document.getElementById('resultsContent');
-const errorNotice = document.getElementById('errorNotice');
-const scoreEl = document.getElementById('score');
-const progressFill = document.getElementById('progressFill');
-const infoEl = document.getElementById('info');
-const answersEl = document.getElementById('answers');
-const retakeBtn = document.getElementById('retakeBtn');
-
-async function loadResults() {
-  try {
-    console.log('Fetching results for token:', token);
-    const res = await fetch('/api/results/' + token, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    console.log('Response status:', res.status);
-    console.log('Response headers:', Object.fromEntries(res.headers.entries()));
-    
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await res.text();
-      console.log('Non-JSON response:', text.slice(0, 100));
-      throw new Error(`Invalid response: Expected JSON, got ${contentType || 'unknown content type'}`);
-    }
-
-    const data = await res.json();
-    console.log('Parsed data:', data);
-
-    if (!data || typeof data.score === 'undefined' || !data.exam_id) {
-      throw new Error('Incomplete results data: Missing score or exam_id');
-    }
-
-    const total = data.total || 100;
-    scoreEl.innerText = `${data.score !== undefined ? data.score : 'N/A'}/${total}`;
-    progressFill.style.width = data.score !== undefined ? `${Math.round((data.score / total) * 100)}%` : '0%';
-    infoEl.innerText = `Name: ${data.name || 'Anonymous'} • Exam: ${data.exam_id}`;
-    if (data.can_retake) {
-      retakeBtn.style.display = 'inline-block';
-      retakeBtn.addEventListener('click', () => location.href = `/exam/${data.exam_id}?token=${token}`);
-    }
-
-    if (Array.isArray(data.answers) && data.answers.length > 0) {
-      data.answers.forEach((ans, idx) => {
-        const div = document.createElement('div');
-        div.className = `answer-item ${ans.correct ? 'correct' : 'incorrect'}`;
-        let html = `<div class="question">Q${idx + 1}. ${escapeHtml(ans.question)}</div>`;
-        if (Array.isArray(ans.choices)) {
-          ans.choices.forEach((ch, i) => {
-            html += `<div class="choice">${String.fromCharCode(65 + i)}. ${escapeHtml(ch)}</div>`;
-          });
-        }
-        if (!ans.correct && ans.correct !== undefined) {
-          html += `<div class="your-answer">Your answer: ${ans.user_answer !== undefined ? String.fromCharCode(65 + ans.user_answer) : 'None'}</div>`;
-          html += `<div class="correct-answer">Correct answer: ${ans.correct_answer !== undefined ? String.fromCharCode(65 + ans.correct_answer) : 'N/A'}</div>`;
-        }
-        div.innerHTML = html;
-        answersEl.appendChild(div);
-      });
-    } else {
-      answersEl.innerHTML = '<div class="small">No detailed answer breakdown available.</div>';
-    }
-
-    loading.style.display = 'none';
-    resultsContent.style.display = 'block';
-    resultsCard.classList.add('fade-in');
-  } catch (e) {
-    console.error('Error loading results:', e);
-    loading.style.display = 'none';
-    errorNotice.style.display = 'block';
-    errorNotice.innerText = `Failed to load results: ${e.message}. Please try refreshing or contact support.`;
-    resultsContent.style.display = 'block';
-    scoreEl.innerText = 'N/A';
-    infoEl.innerText = 'Results unavailable';
-    answersEl.innerHTML = '<div class="small">Unable to load result details.</div>';
-  }
-}
-
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'" :'&#39;'}[m]));
-}
-
 document.getElementById('viewScoreBtn').addEventListener('click', function() {
   const scorePanel = document.getElementById('scorePanel');
   scorePanel.style.display = 'block';
   this.style.display = 'none';
 });
 
-loadResults();
+// slight visual tweak
+setTimeout(()=>{
+  const msg = document.getElementById('submittedMsg');
+  if(msg) msg.style.opacity = '0.95';
+},200);
 </script>
+{% endblock %}
 </body>
 </html>

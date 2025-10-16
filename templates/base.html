@@ -1,52 +1,78 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}CBT Platform{% endblock %}</title>
-<style>
-:root{
-  --bg:#f7fbff; --card:#fff; --muted:#6b7280; --accent:#0b5fff; --maxw:1100px;
-  --round:8px; --gap:12px;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:#0b2540}
-.container{max-width:var(--maxw);margin:20px auto;padding:16px}
-.header{background:var(--card);border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 0 rgba(12,20,50,0.03)}
-.header .nav a{color:var(--accent);text-decoration:none;margin-right:12px;font-weight:600}
-.card{background:var(--card);padding:16px;border-radius:var(--round);box-shadow:0 8px 20px rgba(2,6,23,0.06)}
-.small{color:var(--muted);font-size:13px}
-.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:none;background:var(--accent);color:white;cursor:pointer}
-.link-btn{background:transparent;border:1px solid #dbeefe;color:var(--accent);padding:8px 10px;border-radius:8px}
-.footer{max-width:var(--maxw);margin:20px auto;color:var(--muted);font-size:13px;text-align:center}
-@media (max-width:720px){ .header{flex-direction:column;align-items:flex-start} .header .nav{margin-top:8px} }
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{% block title %}CBT Platform{% endblock %}</title>
+  <style>
+    :root{--muted:#6b7280;--accent:#0b5fff;--bg:#f7fbff;--card:#fff}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);color:#111}
+    .site-wrap{max-width:1100px;margin:16px auto;padding:12px}
+    .site-header{display:flex;align-items:center;gap:12px;padding:8px 6px}
+    .site-logo{height:48px;width:auto;display:block}
+    .site-title{font-weight:700;font-size:18px;color:var(--accent);letter-spacing:0.2px}
+    .site-sub{font-size:12px;color:var(--muted)}
+    .top-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+    .card{background:var(--card);padding:16px;border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+    main{margin-top:12px}
+    footer{margin-top:18px;color:var(--muted);font-size:12px;text-align:center}
+    /* watermark */
+    .watermark{
+      position:fixed;
+      right:18px;
+      bottom:12px;
+      pointer-events:none;
+      color:#000;
+      opacity:0.06;
+      font-weight:700;
+      font-size:12px;
+      letter-spacing:0.6px;
+      transform:rotate(-6deg);
+      -webkit-transform:rotate(-6deg);
+      z-index:9999;
+      white-space:nowrap;
+    }
+    /* responsive tweaks */
+    @media (max-width:640px){
+      .site-wrap{padding:10px}
+      .site-title{font-size:16px}
+      .site-header{gap:8px}
+    }
+  </style>
 </head>
 <body>
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:14px">
-      <a href="/" style="text-decoration:none;color:var(--accent);font-weight:700;font-size:18px">CBT</a>
-      <nav class="nav">
-        <a href="/student">Student</a>
-        <a href="/teacher">Teacher</a>
-        <a href="/admin">Admin</a>
-        <a href="/login">Login</a>
-      </nav>
-    </div>
-    <div class="small">Secure, reliable CBT</div>
+  <div class="site-wrap">
+    <header class="site-header">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="CBT logo" class="site-logo" onerror="this.style.display='none'"/>
+      <div>
+        <div class="site-title">CBT Platform</div>
+        <div class="site-sub">Manage tests, teachers & results</div>
+      </div>
+
+      <div class="top-actions">
+        {% if session.admin_token %}
+          <a href="{{ url_for('admin') }}" class="link-btn">Admin</a>
+          <a href="{{ url_for('logout') }}" class="link-btn">Logout</a>
+        {% else %}
+          <a href="{{ url_for('login_page') }}" class="link-btn">Login</a>
+        {% endif %}
+      </div>
+    </header>
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+      <small>© {{ now().year if now is defined else '' }} CHRISTTech</small>
+    </footer>
   </div>
 
-  <div class="container">
-    {% block content %}{% endblock %}
-  </div>
+  <div class="watermark">CBT Platform — built by CHRISTTech</div>
 
-  <div class="footer">
-    CBT Platform — built for clarity · <span id="ts"></span>
-  </div>
-
-<script>
-document.getElementById('ts').innerText = new Date().toLocaleString();
-</script>
+  <!-- small helper: provide now() to templates if not already available -->
+  {% if false %}
+  <!-- template-only placeholder -->
+  {% endif %}
 </body>
 </html>

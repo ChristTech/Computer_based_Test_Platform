@@ -16,6 +16,9 @@ body{font-family:Inter,system-ui,Arial;margin:0;background:#f7fbff}
 </style>
 </head>
 <body>
+  {% extends "base.html" %}
+  {% block title %}Admin · CBT{% endblock %}
+  {% block content %}
   <div class="header">
     <div><a href="/"><strong>CBT</strong></a><a href="/login">Login</a><a href="/teacher">Teacher</a></div>
     <div class="small">Student</div>
@@ -71,3 +74,4 @@ loadExams();
 </script>
 </body>
 </html>
+{% endblock %}
