@@ -7,349 +7,187 @@
 <style>
 :root{--muted:#6b7280;--accent:#0b5fff}
 body{font-family:Inter,system-ui,Arial;margin:20px;background:#f7fbff}
-.wrap{max-width:980px;margin:0 auto}
+.wrap{max-width:980px;margin:14px auto}
 .card{background:#fff;padding:16px;border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
-.exam-row{padding:10px;border:1px solid #eef4ff;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .small{color:var(--muted);font-size:13px}
-button{padding:8px 10px;border-radius:6px;border:1px solid #dbeefe;background:#fff;color:var(--accent);cursor:pointer}
-.link-btn {
-  display: inline-block;
-  padding: 10px 16px;
-  border-radius: 6px;
-  background: #0b5fff;
-  color: #fff;
-  text-decoration: none;
-  text-align: center;
-  transition: background 0.3s;
-}
-.link-btn:hover {
-  background: #0056b3;
-}
+.link-btn{display:inline-block;padding:8px 12px;border-radius:6px;background:#0b5fff;color:#fff;text-decoration:none;border:none;cursor:pointer}
+.exam-row{padding:10px;border:1px solid #eef4ff;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.meta{color:#666;font-size:13px;margin-top:6px}
+.subject-chip{display:inline-flex;gap:8px;align-items:center;padding:6px;border-radius:6px;background:#fbfdff;border:1px solid #eef4ff}
 </style>
 </head>
 <body>
 {% extends "base.html" %}
 {% block title %}Admin · CBT{% endblock %}
 {% block content %}
+<style>
+:root{--muted:#6b7280;--accent:#0b5fff}
+.wrap{max-width:980px;margin:14px auto}
+.card{background:#fff;padding:16px;border-radius:8px;box-shadow:0 6px 18px rgba(2,6,23,0.06)}
+.small{color:var(--muted);font-size:13px}
+.link-btn{display:inline-block;padding:8px 12px;border-radius:6px;background:#0b5fff;color:#fff;text-decoration:none;border:none;cursor:pointer}
+.exam-row{padding:10px;border:1px solid #eef4ff;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.meta{color:#666;font-size:13px;margin-top:6px}
+.subject-chip{display:inline-flex;gap:8px;align-items:center;padding:6px;border-radius:6px;background:#fbfdff;border:1px solid #eef4ff}
+</style>
+
 <div class="wrap">
   <div class="card">
     <h2>Admin</h2>
-    <p class="small">Export results and approve teachers.</p>
+    <p class="small">Manage exams and download results by subject (one click).</p>
 
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button id="exportAllCsv" class="link-btn">Export all results (CSV)</button>
-      <button id="exportAllXlsx" class="link-btn">Export all results (XLSX)</button>
-      <select id="exportSubject" style="padding:8px;border-radius:6px;border:1px solid #e6eefc;min-width:180px">
-        <option value="">(by subject)</option>
-      </select>
-      <button id="exportBySubject" class="link-btn">Export subject results (XLSX)</button>
-      <a class="link-btn" href="/admin/logs">Audit logs</a>
-    </div>
-
-    <hr style="margin:16px 0"/>
+    <hr style="margin:12px 0"/>
 
     <h3>Exams</h3>
     <div id="examList" class="small" style="margin-top:8px">Loading exams...</div>
 
-    <hr style="margin:16px 0"/>
+    <hr style="margin:12px 0"/>
 
     <h3>Pending teachers</h3>
     <div id="pendingTeachers" class="small" style="margin-top:8px">Loading...</div>
   </div>
-
-  <script>
-  // populate subjects select for admin export (use DB-backed endpoint)
-  (async function loadSubjectsForExport(){
-    try{
-      const r = await fetch('/api/subjects_db');
-      if(r.ok){
-        const list = await r.json();
-        const sel = document.getElementById('exportSubject');
-        if(Array.isArray(list)){
-          list.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s; opt.text = s;
-            sel.appendChild(opt);
-          });
-        }
-      }
-    }catch(e){}
-  })();
-  document.getElementById('exportBySubject').addEventListener('click', () => {
-    const subj = document.getElementById('exportSubject').value;
-    if(!subj){ alert('Select a subject'); return; }
-    window.open('/api/results_all?format=xlsx&subject=' + encodeURIComponent(subj), '_blank');
-  });
-
-  document.getElementById('exportAllCsv').addEventListener('click', () => {
-    window.open('/api/results_all?format=csv', '_blank');
-  });
-  document.getElementById('exportAllXlsx').addEventListener('click', () => {
-    window.open('/api/results_all?format=xlsx', '_blank');
-  });
-
-  // load exams and allow open/close
-  async function loadExams(){
-    const out = document.getElementById('examList');
-    out.innerText = 'Loading exams...';
-    try{
-      const r = await fetch('/api/list_exams');
-      if(!r.ok){ out.innerText = 'Failed to load exams'; return; }
-      const list = await r.json();
-      if(!list || !list.length){ out.innerText = 'No exams'; return; }
-      out.innerHTML = '';
-      list.forEach(e=>{
-        const div = document.createElement('div'); div.style.marginBottom='8px';
-        div.className = 'exam-row';
-        const state = e.started ? 'Open' : 'Closed';
-        div.innerHTML = `<div style="flex:1">
-            <div style="font-weight:600">${e.title} <span style="font-weight:400;color:#666">(${e.id})</span></div>
-            <div class="small" style="margin-top:6px">Duration: ${e.duration_minutes} mins · State: <strong>${state}</strong></div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="link-btn toggle" data-id="${e.id}" data-started="${e.started}">${e.started ? 'Close' : 'Open'}</button>
-            <button class="link-btn view-submissions" data-id="${e.id}">View</button>
-            <button class="link-btn download-results" data-id="${e.id}">Download</button>
-          </div>`;
-        out.appendChild(div);
-      });
-      document.querySelectorAll('.toggle').forEach(btn=>{
-        btn.addEventListener('click', async (ev)=>{
-          const id = ev.target.dataset.id;
-          const currentStarted = String(ev.target.dataset.started) === 'true';
-          const wantOpen = !currentStarted;
-          
-          const res = await fetch('/api/set_exam_state', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ exam_id: id, started: wantOpen })
-          });
-          const js = await res.json().catch(()=>({}));
-          if(js && js.ok){ 
-            alert('Exam updated'); 
-            loadExams(); 
-          } else { 
-            if(js.error === 'Admin authentication required') {
-              window.location.href = '/login';
-            } else {
-              alert('Update failed: ' + (js.error||'unknown')); 
-            }
-          }
-        });
-      });
-      document.querySelectorAll('.download-results').forEach(btn=>{
-        btn.addEventListener('click', async (ev)=>{
-          const id = ev.target.dataset.id;
-          const pw = prompt('Admin password (or cancel to use teacher token):');
-          if(pw===null) return;
-          // open XLSX download
-          window.open('/api/download_exam_results/' + encodeURIComponent(id) + '?admin_password=' + encodeURIComponent(pw), '_blank');
-        });
-      });
-    }catch(e){
-      out.innerText = 'Failed to load exams';
-    }
-  }
-  loadExams();
-
-  async function loadPending(){
-    const out = document.getElementById('pendingTeachers');
-    out.innerText = 'Loading...';
-    try{
-      const r = await fetch('/api/pending_teachers');
-      if(!r.ok){ out.innerText = 'Failed to load'; return; }
-      const list = await r.json();
-      if(!list || !list.length){ out.innerText = 'No pending teachers'; return; }
-      out.innerHTML = '';
-      list.forEach(t=>{
-        const div = document.createElement('div'); div.style.marginBottom='8px';
-        div.innerHTML = `<div style="padding:10px;border:1px solid #eef4ff;border-radius:8px">
-          <div style="font-weight:600">${t.name} <span style="font-weight:400;color:#666">• ${t.subject || ''}</span></div>
-          <div class="small" style="margin-top:6px">id: ${t.id}</div>
-          <div style="margin-top:8px"><button class="link-btn approve" data-id="${t.id}">Approve</button></div>
-        </div>`;
-        out.appendChild(div);
-      });
-      document.querySelectorAll('.approve').forEach(btn=>{
-        btn.addEventListener('click', async (ev)=>{
-          const id = ev.target.dataset.id;
-          const pw = prompt('Admin password:');
-          if(pw===null) return;
-          const res = await fetch('/api/approve_teacher', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({teacher_id: id, admin_password: pw})});
-          const js = await res.json().catch(()=>({}));
-          if(js && js.ok){ alert('Teacher approved. Token: ' + js.teacher_token); loadPending(); loadExams(); } else { alert('Approve failed: ' + (js.error||'unknown')); }
-        });
-      });
-    }catch(e){
-      out.innerText = 'Failed to load';
-    }
-  }
-  loadPending();
-  </script>
-  </div>
-
-<div id="submissionsPanel" style="display:none;position:fixed;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.4);align-items:center;justify-content:center;z-index:9999">
-  <div style="background:#fff;padding:16px;border-radius:8px;max-width:900px;width:95%;max-height:85%;overflow:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 style="margin:0">Submissions</h3>
-      <button id="closeSubmissions" class="link-btn">Close</button>
-    </div>
-    <div id="submissionsContent" style="margin-top:12px;font-size:14px"></div>
-  </div>
 </div>
 
 <script>
-document.body.addEventListener('click', async function(ev){
-  const t = ev.target;
-  if(t && t.classList && t.classList.contains('view-submissions')){
-    const examId = t.dataset.id;
-    const pw = prompt('Admin password (or cancel to use teacher token):');
-    if(pw === null) return;
-    const url = '/api/results_json/' + encodeURIComponent(examId) + '?admin_password=' + encodeURIComponent(pw);
-    try{
-      const res = await fetch(url);
-      // parse server JSON even on non-OK so we can display error details
-      let list = null;
-      const js = await res.json().catch(()=>({error:'invalid response'}));
-      if(!res.ok){ alert('Fetch error: ' + (js.error || res.status)); return; }
-      list = js;
-      const out = document.getElementById('submissionsContent');
-      out.innerHTML = '';
-      if(!list || !list.length){ out.innerHTML = '<div class="small">No submissions</div>'; }
-      list.forEach(sub=>{
-        const container = document.createElement('div');
-        container.style.border = '1px solid #eef4ff';
-        container.style.padding = '10px';
-        container.style.borderRadius = '8px';
-        container.style.marginBottom = '8px';
-        let html = `<div style="font-weight:600">${sub.name || 'Anonymous'} — ${sub.score}/${sub.total || 'N/A'} <span style="font-weight:400;color:#666">• ${sub.submitted_at || ''}</span></div>`;
-        if(Array.isArray(sub.answers_detail) && sub.answers_detail.length){
-          html += '<div style="margin-top:8px">';
-          sub.answers_detail.forEach((q,i)=>{
-            const selLabel = q.selected_label || (q.selected_index !== null && q.selected_index !== undefined ? String.fromCharCode(65 + q.selected_index) : 'N/A');
-            const corrLabel = q.correct_label || (q.correct_index !== null && q.correct_index !== undefined ? String.fromCharCode(65 + q.correct_index) : 'N/A');
-            html += `<div style="margin-bottom:6px;padding:6px;border-radius:6px;background:${q.is_correct ? '#ecfdf5' : '#fff7f7'}">
-              <div style="font-weight:600">Q${i+1}. ${escapeHtml(q.question || '')}</div>
-              <div class="small">Selected: <strong>${escapeHtml(selLabel + (q.selected_text ? ' — ' + q.selected_text : ''))}</strong></div>
-              <div class="small">Correct: <strong>${escapeHtml(corrLabel + (q.correct_text ? ' — ' + q.correct_text : ''))}</strong></div>
-            </div>`;
-          });
-          html += '</div>';
-        } else {
-          html += '<div class="small" style="margin-top:8px">No detailed answers recorded.</div>';
-        }
-        container.innerHTML = html;
-        out.appendChild(container);
-      });
-      document.getElementById('submissionsPanel').style.display = 'flex';
-    }catch(err){
-      alert('Error fetching submissions');
-    }
-  }
-});
-
-document.getElementById('closeSubmissions').addEventListener('click', ()=>{
-  document.getElementById('submissionsPanel').style.display = 'none';
-});
-
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-</script>
-<script>
-// Add this near the top, after other script tags
-async function checkAdminSession() {
-  try {
+async function ensureAdminOrRedirect(){
+  try{
     const r = await fetch('/api/check_admin');
-    const data = await r.json();
-    if (!data.is_admin) {
-      window.location.href = '/login';
-    }
-  } catch(err) {
-    console.error('Session check failed:', err);
+    const js = await r.json().catch(()=>({is_admin:false}));
+    if(!js.is_admin) { window.location.href = '/login'; return false; }
+    return true;
+  }catch(e){
     window.location.href = '/login';
+    return false;
   }
 }
 
-// Remove all the password prompts from button click handlers
-document.querySelectorAll('.toggle').forEach(btn => {
-  btn.addEventListener('click', async (ev) => {
-    const id = ev.target.dataset.id;
-    const currentStarted = String(ev.target.dataset.started) === 'true';
-    const wantOpen = !currentStarted;
-    
-    const res = await fetch('/api/set_exam_state', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ exam_id: id, started: wantOpen })
-    });
-    const js = await res.json().catch(() => ({}));
-    if(js && js.ok){ 
-      alert('Exam updated'); 
-      loadExams(); 
-    } else { 
-      if(js.error === 'Admin authentication required') {
-        window.location.href = '/login';
+async function loadExams(){
+  const out = document.getElementById('examList');
+  out.innerText = 'Loading exams...';
+  try{
+    const r = await fetch('/api/list_exams');
+    if(!r.ok){ out.innerText = 'Failed to load exams'; return; }
+    const list = await r.json();
+    if(!list || !list.length){ out.innerText = 'No exams'; return; }
+    out.innerHTML = '';
+    list.forEach(e=>{
+      const div = document.createElement('div');
+      div.className = 'exam-row';
+      const left = document.createElement('div');
+      left.style.flex = '1';
+      left.innerHTML = `<div style="font-weight:600">${e.title} <span style="font-weight:400;color:#666">(${e.id})</span></div>
+                        <div class="meta">Duration: ${e.duration_minutes} mins · State: <strong>${e.started ? 'Open' : 'Closed'}</strong></div>`;
+      const right = document.createElement('div');
+      right.style.display='flex'; right.style.gap='8px'; right.style.alignItems='center';
+
+      // subject + download button (if subject exists)
+      const subj = e.subject || '';
+      if(subj){
+        const subjWrap = document.createElement('div');
+        subjWrap.className = 'subject-chip';
+        subjWrap.innerHTML = `<span style="font-weight:600">${subj}</span>`;
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'link-btn download-subject';
+        dlBtn.dataset.subject = subj;
+        dlBtn.dataset.exam = e.id;                // pass exam id too
+        dlBtn.dataset.format = 'csv';
+        dlBtn.innerText = 'Download';
+        subjWrap.appendChild(dlBtn);
+        right.appendChild(subjWrap);
       } else {
-        alert('Update failed: ' + (js.error||'unknown')); 
+        const noSub = document.createElement('div');
+        noSub.style.color = '#999';
+        noSub.innerText = '(no subject)';
+        right.appendChild(noSub);
       }
-    }
+
+      // Open/Close toggle kept
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'link-btn toggle';
+      toggleBtn.style.background = '#111827';
+      toggleBtn.dataset.id = e.id;
+      toggleBtn.dataset.started = e.started ? '1':'0';
+      toggleBtn.innerText = e.started ? 'Close' : 'Open';
+      right.appendChild(toggleBtn);
+
+      div.appendChild(left); div.appendChild(right); out.appendChild(div);
+    });
+
+    // attach toggle handlers
+    document.querySelectorAll('.toggle').forEach(btn=>{
+      btn.addEventListener('click', async (ev)=>{
+        const id = ev.currentTarget.dataset.id;
+        const started = ev.currentTarget.dataset.started === '1';
+        const wantOpen = !started;
+        if(!await ensureAdminOrRedirect()) return;
+        try{
+          const res = await fetch('/api/set_exam_state', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ exam_id: id, started: wantOpen })
+          });
+          const js = await res.json().catch(()=>({}));
+          if(res.ok && js.ok){ loadExams(); } else { alert('Update failed: ' + (js.error || 'unknown')); }
+        }catch(err){ alert('Update failed (network)'); }
+      });
+    });
+
+  }catch(e){
+    out.innerText = 'Failed to load exams';
+  }
+}
+
+// subject download handler (one click, admin session required)
+document.addEventListener('click', function(ev){
+  const btn = ev.target.closest && ev.target.closest('.download-subject');
+  if(!btn) return;
+  const subj = btn.dataset.subject;
+  const fmt = btn.dataset.format || 'csv';
+  const examId = btn.dataset.exam || '';
+  if(!subj && !examId) return;
+  ensureAdminOrRedirect().then(ok=>{
+    if(!ok) return;
+    // include exam_id as fallback — server will prefer exam_id to resolve correct subject
+    const url = '/api/download_subject?subject=' + encodeURIComponent(subj) + '&exam_id=' + encodeURIComponent(examId) + '&format=' + encodeURIComponent(fmt);
+    window.open(url, '_blank');
   });
 });
 
-// Similar updates for other admin actions...
-document.getElementById('exportBySubject').addEventListener('click', () => {
-  const subj = document.getElementById('exportSubject').value;
-  if(!subj){ alert('Select a subject'); return; }
-  window.open('/api/results_all?format=xlsx&subject=' + encodeURIComponent(subj), '_blank');
-});
+// pending teachers (unchanged)
+async function loadPending(){
+  const out = document.getElementById('pendingTeachers');
+  out.innerText = 'Loading...';
+  try{
+    const r = await fetch('/api/pending_teachers');
+    if(!r.ok){ out.innerText = 'Failed to load'; return; }
+    const list = await r.json();
+    if(!list || !list.length){ out.innerText = 'No pending teachers'; return; }
+    out.innerHTML = '';
+    list.forEach(t=>{
+      const div = document.createElement('div'); div.style.marginBottom='8px';
+      div.innerHTML = `<div style="padding:10px;border:1px solid #eef4ff;border-radius:8px">
+        <div style="font-weight:600">${t.name} <span style="font-weight:400;color:#666">• ${t.subject || ''}</span></div>
+        <div class="small" style="margin-top:6px">id: ${t.id}</div>
+        <div style="margin-top:8px"><button class="link-btn approve" data-id="${t.id}">Approve</button></div>
+      </div>`;
+      out.appendChild(div);
+    });
+    document.querySelectorAll('.approve').forEach(btn=>{
+      btn.addEventListener('click', async (ev)=>{
+        const id = ev.target.dataset.id;
+        const pw = prompt('Admin password:');
+        if(pw===null) return;
+        const res = await fetch('/api/approve_teacher', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({teacher_id: id, admin_password: pw})});
+        const js = await res.json().catch(()=>({}));
+        if(js && js.ok){ alert('Teacher approved. Token: ' + js.teacher_token); loadPending(); loadExams(); } else { alert('Approve failed: ' + (js.error||'unknown')); }
+      });
+    });
+  }catch(e){ out.innerText = 'Failed to load'; }
+}
 
-document.getElementById('exportAllCsv').addEventListener('click', () => {
-  window.open('/api/results_all?format=csv', '_blank');
-});
-
-document.getElementById('exportAllXlsx').addEventListener('click', () => {
-  window.open('/api/results_all?format=xlsx', '_blank');
-});
-
-// Add session check on page load
-window.addEventListener('load', checkAdminSession);
-
-// Update logout handler
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-  try {
-    const r = await fetch('/api/logout_admin');
-    const data = await r.json();
-    if(data.ok) {
-      window.location.href = '/login';
-    }
-  } catch(err) {
-    console.error('Logout failed:', err);
-  }
-});
+loadExams(); loadPending();
 </script>
-<!-- Add this near the top of the page content -->
-<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-  <button id="logoutBtn" class="btn" style="background:#ef4444">Logout</button>
-</div>
-<script>
-/*
-  Add this script (or merge with existing admin scripts). It expects
-  each subject row/button to include a .download-subject element with
-  data-subject="Subject Name" (or data-format to prefer csv/xlsx).
-  Example button in subject list:
-    <button class="download-subject" data-subject="Mathematics" data-format="xlsx">Download</button>
-*/
-document.addEventListener('click', function(e){
-  const btn = e.target.closest && e.target.closest('.download-subject');
-  if(!btn) return;
-  const subj = (btn.dataset && btn.dataset.subject) || btn.getAttribute('data-subject') || '';
-  const fmt = (btn.dataset && btn.dataset.format) || 'xlsx';
-  if(!subj){ alert('Subject not found'); return; }
-  // open download in new tab/window so browser handles the file save
-  const url = '/api/download_subject?subject=' + encodeURIComponent(subj) + '&format=' + encodeURIComponent(fmt);
-  window.open(url, '_blank');
-});
-</script>
+{% endblock %}
 </body>
 </html>
-{% endblock %}
 

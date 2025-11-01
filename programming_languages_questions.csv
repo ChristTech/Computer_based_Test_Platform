@@ -1,0 +1,6 @@
+question,choice1,choice2,choice3,choice4,answer_index
+"Which programming language, developed in the 1950s, is considered one of the first high-level programming languages and is still used today for scientific computing?","Java","FORTRAN","Python","C++",1
+"What is the primary purpose of an interpreted programming language?","To compile code directly into machine language","To execute code line by line without prior compilation","To create mobile applications only","To design web interfaces",1
+"Which programming paradigm emphasizes the use of objects that contain both data and code?","Functional programming","Procedural programming","Object-oriented programming","Logic programming",2
+"Python was created by Guido van Rossum in what year?","1985","1991","1995","2000",1
+"Which programming language is primarily used for iOS app development?","Swift","Kotlin","JavaScript","Ruby",0

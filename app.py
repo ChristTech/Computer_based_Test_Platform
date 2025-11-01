@@ -8,6 +8,8 @@ logging.basicConfig(
 import os
 import sqlite3
 import uuid
+from functools import wraps
+
 import json
 import time
 from datetime import datetime, timedelta
@@ -15,11 +17,12 @@ from flask import Flask, request, render_template, redirect, url_for, jsonify, s
 import hashlib
 import random
 import docx  # Added for DOCX parsing
-from functools import wraps
 
 import io
 import csv
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import re
+from flask import Response
 
 # At the top of your file, after the existing imports
 try:
@@ -37,8 +40,34 @@ except Exception:
 
 BASE_DIR = os.path.dirname(__file__)
 DB = os.path.join(BASE_DIR, 'cbt.db')
+
+# ensure a secret key for session (set a secure value in production)
+# store the secret value now and assign it to the Flask app after the app is created
+APP_SECRET_KEY = os.environ.get('FLASK_SECRET', 'dev-secret-key-please-change')
+
+# admin creds (env override)
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'adminpass')
-ADMIN_USERNAME = 'admin'  # Default admin username
+
+def ensure_column(table: str, column: str, definition: str):
+    """
+    Ensure a column exists on a table; create it if missing.
+    Uses a direct sqlite connection so it can be called before db_conn() is defined.
+    """
+    try:
+        conn = sqlite3.connect(DB)
+        cur = conn.cursor()
+        cur.execute(f"PRAGMA table_info({table})")
+        cols = [row[1] for row in cur.fetchall()]
+        if column not in cols:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            conn.commit()
+    except Exception:
+        # keep silent; caller may handle errors
+        pass
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 def is_admin_request():
     """
@@ -111,14 +140,7 @@ def init_db():
     )''')
     conn.commit()
 
-    def ensure_column(table, column, definition):
-        cur = conn.cursor()
-        cur.execute(f"PRAGMA table_info({table})")
-        cols = [row[1] for row in cur.fetchall()]
-        if column not in cols:
-            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-            conn.commit()
-
+    # use module-level helper to ensure optional columns
     ensure_column('results', 'name', 'TEXT')
     ensure_column('results', 'total', 'INTEGER')
     ensure_column('results', 'student_id', 'TEXT')
@@ -132,11 +154,17 @@ def init_db():
     ensure_column('questions', 'updated_at', 'INTEGER')
     # ensure we can persist per-session ordering
     ensure_column('sessions', 'question_state', 'TEXT')   # JSON: list of {id,question,choices,correct_index}
+    ensure_column('sessions', 'question_order', 'TEXT')   # persisted per-session ordering (added)
     ensure_column('results', 'answers_detail', 'TEXT')    # JSON: detailed per-question responses for auditing
 
     # teacher approval / subject columns (for pending approvals and subject selection)
     ensure_column('teachers', 'approved', 'INTEGER DEFAULT 0')   # 0 = pending, 1 = approved
     ensure_column('teachers', 'subject', 'TEXT')
+
+    # add exam tag and session tag columns (new)
+    ensure_column('exams', 'tag', 'TEXT')
+    ensure_column('sessions', 'tag', 'TEXT')
+
     # indexes for faster lookup on larger datasets
     try:
         # c.execute("
@@ -149,7 +177,8 @@ def init_db():
     conn.close()
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Set a random secret key for session encryption
+# assign the previously read secret to the Flask app now that `app` exists
+app.secret_key = APP_SECRET_KEY
 init_db()
 
 def db_conn():
@@ -203,10 +232,11 @@ def create_exam():
         duration = int(data.get('duration') or 30)
     except Exception:
         duration = 30
+    tag = (data.get('tag') or '').strip() or None
     exam_id = str(uuid.uuid4())[:8]
     conn = db_conn(); c = conn.cursor()
-    c.execute('INSERT INTO exams (id,title,duration_minutes) VALUES (?,?,?)', (exam_id, title, duration))
-    conn.commit(); conn.close
+    c.execute('INSERT INTO exams (id,title,duration_minutes,tag) VALUES (?,?,?,?)', (exam_id, title, duration, tag))
+    conn.commit(); conn.close()
     return jsonify({'exam_id': exam_id})
 
 @app.route('/api/add_question', methods=['POST'])
@@ -242,9 +272,28 @@ def add_question():
 @app.route('/api/list_exams')
 def list_exams():
     conn = db_conn(); c = conn.cursor()
-    c.execute('SELECT id,title,duration_minutes,started,teacher_id FROM exams ORDER BY rowid DESC')
+    # include teacher.subject and exam.tag for UI convenience
+    c.execute('''
+        SELECT e.id, e.title, e.duration_minutes, e.started, e.teacher_id,
+               COALESCE(t.subject, '') AS subject,
+               COALESCE(e.tag, '') AS tag
+        FROM exams e
+        LEFT JOIN teachers t ON e.teacher_id = t.id
+        ORDER BY subject DESC
+    ''')
     rows = c.fetchall(); conn.close()
-    return jsonify([{'id': r['id'], 'title': r['title'], 'duration_minutes': r['duration_minutes'], 'started': bool(r['started']), 'teacher_id': r['teacher_id']} for r in rows])
+    out = []
+    for r in rows:
+        out.append({
+            'id': r['id'],
+            'title': r['title'],
+            'duration_minutes': r['duration_minutes'],
+            'started': bool(r['started']),
+            'teacher_id': r['teacher_id'],
+            'subject': r['subject'] or '',
+            'tag': r['tag'] or ''
+        })
+    return jsonify(out)
 
 @app.route('/api/questions/<exam_id>')
 def get_questions(exam_id):
@@ -426,7 +475,7 @@ def start_exam():
         return jsonify({'error': 'exam_id required'}), 400
 
     conn = db_conn(); c = conn.cursor()
-    c.execute('SELECT id, duration_minutes, started FROM exams WHERE id=?', (exam_id,))
+    c.execute('SELECT id, duration_minutes, started, tag FROM exams WHERE id=?', (exam_id,))
     ex = c.fetchone()
     if not ex:
         conn.close(); return jsonify({'error': 'exam not found'}), 404
@@ -472,16 +521,16 @@ def start_exam():
     duration = int(ex['duration_minutes'] or 30) * 60
     end_time = start_time + duration
     token = str(uuid.uuid4())[:8]
+    exam_tag = ex['tag'] if 'tag' in ex.keys() else None
 
-    c.execute('INSERT INTO sessions (token, exam_id, start_time, end_time, student_name, question_state) VALUES (?,?,?,?,?,?)',
-              (token, exam_id, start_time, end_time, student_name or None, json.dumps(question_state)))
+    c.execute('INSERT INTO sessions (token, exam_id, start_time, end_time, student_name, question_state, tag) VALUES (?,?,?,?,?,?,?)',
+              (token, exam_id, start_time, end_time, student_name or None, json.dumps(question_state), exam_tag))
     conn.commit(); conn.close()
 
     url = request.host_url.rstrip('/') + url_for('exam_page', token=token)
     return jsonify({'token': token, 'url': url})
-
-# Ensure column exists in init_db:
-    ensure_column('sessions', 'question_order', 'TEXT')
+# (moved ensure_column('sessions', 'question_order', 'TEXT') into init_db to avoid calling an undefined local function)
+ensure_column('sessions', 'question_order', 'TEXT')
 
 @app.route('/exam/<token>')
 def exam_page(token):
@@ -625,18 +674,23 @@ def _sanitize_filename(s: str) -> str:
 def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answers_detail=None):
     # determine subject label (try DB -> exams -> teacher.subject), fallback to exam_id
     subject_name = ''
+    exam_tag = ''
     try:
         conn = db_conn(); c = conn.cursor()
-        c.execute('SELECT t.subject FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
+        c.execute('SELECT t.subject, e.tag FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
         er = c.fetchone()
         subject_name = (er['subject'] or '').strip() if er and 'subject' in er.keys() else ''
+        exam_tag = (er['tag'] or '').strip() if er and 'tag' in er.keys() else ''
         conn.close()
     except Exception:
         subject_name = ''
+        exam_tag = ''
 
     subject_label = _sanitize_filename(subject_name or exam_id)
+    tag_label = _sanitize_filename(exam_tag or '')
 
     row = {
+        'tag': exam_tag or '',
         'subject': subject_name or '',
         'name': name or '',
         'token': token,
@@ -647,6 +701,9 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
 
     fname_xlsx = os.path.join(BASE_DIR, f'results_{subject_label}.xlsx')
     fname_csv = os.path.join(BASE_DIR, f'results_{subject_label}.csv')
+    # also maintain per-tag files for quick downloads
+    fname_tag_xlsx = os.path.join(BASE_DIR, f'results_tag_{tag_label}.xlsx') if tag_label else None
+    fname_tag_csv = os.path.join(BASE_DIR, f'results_tag_{tag_label}.csv') if tag_label else None
 
     # include answers_detail if present
     if answers_detail is not None:
@@ -665,9 +722,22 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
             else:
                 df = df_row
             df.to_excel(fname_xlsx, index=False)
+            if tag_label:
+                try:
+                    if os.path.exists(fname_tag_xlsx):
+                        existing_tag = pd.read_excel(fname_tag_xlsx)
+                        df_tag = pd.concat([existing_tag, df_row], ignore_index=True)
+                    else:
+                        df_tag = df_row
+                    df_tag.to_excel(fname_tag_xlsx, index=False)
+                except Exception:
+                    pass
             # also ensure CSV exists for systems that expect CSV
             try:
                 df.to_csv(fname_csv, index=False)
+                if tag_label:
+                    try: df.to_csv(fname_tag_csv, index=False)
+                    except Exception: pass
             except Exception:
                 pass
             return
@@ -677,6 +747,8 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
     # CSV fallback / append
     write_header = not os.path.exists(fname_csv)
     fieldnames = ['subject','name','token','score','total','submitted_at']
+    if tag_label:
+        fieldnames = ['tag'] + fieldnames
     if answers_detail is not None:
         fieldnames.append('answers_detail')
     with open(fname_csv, 'a', newline='', encoding='utf-8') as fh:
@@ -684,21 +756,19 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
         if write_header:
             writer.writeheader()
         writer.writerow(row)
+    # append to tag CSV as well
+    if tag_label:
+        write_header_t = not os.path.exists(fname_tag_csv)
+        with open(fname_tag_csv, 'a', newline='', encoding='utf-8') as fh2:
+            writer2 = csv.DictWriter(fh2, fieldnames=fieldnames)
+            if write_header_t:
+                writer2.writeheader()
+            writer2.writerow(row)
 
 @app.route('/api/results_csv/<exam_id>')
 def results_csv(exam_id):
-    conn = db_conn(); c = conn.cursor()
-    c.execute('SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail FROM results r JOIN sessions s ON r.token=s.token WHERE s.exam_id=?', (exam_id,))
-    rows = c.fetchall(); conn.close()
-    si = io.StringIO()
-    writer = csv.writer(si)
-    writer.writerow(['token','name','score','total','submitted_at','answers_detail'])
-    for r in rows:
-        writer.writerow([r['token'], r['name'] or '', r['score'], r['total'] if 'total' in r.keys() else '', datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else '', (r['answers_detail'] or '')])
-    mem = io.BytesIO()
-    mem.write(si.getvalue().encode('utf-8'))
-    mem.seek(0)
-    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'results_{exam_id}.csv')
+    # endpoint disabled temporarily while we rework export logic
+    return jsonify({'error': 'results_csv disabled temporarily'}), 410
 
 @app.route('/api/upload_students', methods=['POST'])
 def upload_students():
@@ -807,7 +877,7 @@ def pending_teachers():
     conn = db_conn(); c = conn.cursor()
     # return teachers awaiting admin approval
     try:
-        c.execute('SELECT id, name, subject FROM teachers WHERE approved=0 ORDER BY rowid DESC')
+        c.execute('SELECT id, name, subject FROM teachers WHERE approved=0 ORDER BY subject DESC')
         rows = c.fetchall()
     finally:
         conn.close()
@@ -910,9 +980,10 @@ def teacher_create_exam():
         duration = int(data.get('duration') or 30)
     except Exception:
         duration = 30
+    tag = (data.get('tag') or '').strip() or None
     exam_id = str(uuid.uuid4())[:8]
     conn = db_conn(); c = conn.cursor()
-    c.execute('INSERT INTO exams (id,title,duration_minutes,teacher_id) VALUES (?,?,?,?)', (exam_id, title, duration, teacher['id']))
+    c.execute('INSERT INTO exams (id,title,duration_minutes,teacher_id,tag) VALUES (?,?,?,?,?)', (exam_id, title, duration, teacher['id'], tag))
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'exam_id': exam_id})
 
@@ -950,6 +1021,56 @@ def set_security_headers(response):
     # minimal CSP - adjust as needed
     response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' data:;"
     return response
+
+# Admin decorator must be defined before any route uses it
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'admin_token' not in session:
+            return jsonify({'error': 'Admin authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Admin login / session endpoints (restore if missing)
+@app.route('/api/login_admin', methods=['POST'])
+def login_admin():
+    """
+    Accepts JSON or form: { username, password }.
+    Sets session['admin_token'] on success.
+    """
+    data = {}
+    try:
+        data = request.get_json(silent=True) or {}
+    except Exception:
+        data = {}
+    # also accept form-encoded fallback
+    if not data:
+        data = { 'username': request.form.get('username'), 'password': request.form.get('password') }
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        session['admin_token'] = uuid.uuid4().hex
+        return jsonify({'ok': True})
+    return jsonify({'error': 'Invalid credentials'}), 401
+
+@app.route('/api/check_admin')
+def check_admin():
+    return jsonify({'is_admin': 'admin_token' in session})
+
+@app.route('/api/logout_admin', methods=['POST','GET'])
+def logout_admin():
+    session.pop('admin_token', None)
+    return jsonify({'ok': True})
+
+# Add a user-facing logout endpoint (templates often call url_for('logout'))
+@app.route('/logout')
+def logout():
+    """
+    Clear admin session and redirect to the login page.
+    Provides the 'logout' endpoint expected by templates.
+    """
+    session.pop('admin_token', None)
+    return redirect(url_for('login_page'))
 
 @app.errorhandler(404)
 def not_found(e):
@@ -1084,119 +1205,8 @@ def api_get_result(token):
 
 @app.route('/api/results_all')
 def results_all():
-    """
-    Export results across exams with basic permission check.
-    Allowed: teachers (via X-Teacher-Token) or admin (query param admin_password).
-    Supports filters: exam_id, teacher_id (admin only), subject (admin only), date_from, date_to, paging: page, per_page
-    format=csv|xlsx
-    """
-    fmt = (request.args.get('format') or 'csv').lower()
-    teacher = get_teacher_from_request()
-    is_admin = (request.args.get('admin_password') == ADMIN_PASSWORD)
-    if not teacher and not is_admin:
-        return jsonify({'error': 'admin or teacher auth required'}), 401
-
-    exam_id = request.args.get('exam_id')
-    teacher_filter = request.args.get('teacher_id')
-    subject_filter = request.args.get('subject')
-    date_from = request.args.get('date_from')  # ISO or YYYY-MM-DD
-    date_to = request.args.get('date_to')
-    page = max(1, int(request.args.get('page') or 1))
-    per_page = max(1, min(5000, int(request.args.get('per_page') or 1000)))
-    offset = (page - 1) * per_page
-
-    params = []
-    where = []
-
-    if exam_id:
-        where.append("s.exam_id = ?"); params.append(exam_id)
-
-    # teacher filter only allowed to admin; otherwise, if teacher logged in, limit to their exams
-    if teacher and not is_admin:
-        where.append("e.teacher_id = ?"); params.append(teacher['id'])
-    elif teacher_filter and is_admin:
-        where.append("e.teacher_id = ?"); params.append(teacher_filter)
-
-    # subject filter only allowed to admin (or teacher may filter by their subject if desired)
-    if subject_filter:
-        # will join teachers table below and filter by t.subject
-        where.append("t.subject = ?"); params.append(subject_filter)
-        
-    def to_ts(v):
-        try:
-            # accept YYYY-MM-DD or ISO
-            if len(v) == 10:
-                dt = datetime.fromisoformat(v + "T00:00:00")
-            else:
-                dt = datetime.fromisoformat(v)
-            return int(dt.timestamp())
-        except Exception:
-            return None
-
-    if date_from:
-        ts = to_ts(date_from)
-        if ts:
-            where.append("r.submitted_at >= ?"); params.append(ts)
-    if date_to:
-        ts = to_ts(date_to)
-        if ts:
-            where.append("r.submitted_at <= ?"); params.append(ts)
-
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
-    # join teachers as t so subject filter can be applied if requested
-    q = f'''
-        SELECT s.exam_id, COALESCE(e.title,'') AS exam_title,
-               r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail
-        FROM results r
-        JOIN sessions s ON r.token=s.token
-        LEFT JOIN exams e ON s.exam_id=e.id
-        LEFT JOIN teachers t ON e.teacher_id = t.id
-        {where_sql}
-        ORDER BY r.submitted_at DESC
-        LIMIT ? OFFSET ?
-    '''
-    params.extend([per_page, offset])
-
-    conn = db_conn(); c = conn.cursor()
-    c.execute(q, tuple(params))
-    rows = c.fetchall(); conn.close()
-
-    data = []
-    for r in rows:
-        submitted = ''
-        try:
-            submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
-        except Exception:
-            submitted = ''
-        data.append({
-            'exam_id': r['exam_id'] or '',
-            'exam_title': r['exam_title'] or '',
-            'token': r['token'],
-            'name': r['name'] or '',
-            'score': r['score'],
-            'total': r['total'] if 'total' in r.keys() else '',
-            'answers_detail': r['answers_detail'] if 'answers_detail' in r.keys() else '',
-            'submitted_at': submitted
-        })
-
-    # XLSX if requested and pandas available
-    if fmt == 'xlsx' and pd:
-        df = pd.DataFrame(data)
-        mem = io.BytesIO()
-        with pd.ExcelWriter(mem, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='results')
-        mem.seek(0)
-        return send_file(mem, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name='results_filtered.xlsx')
-
-    # fallback to CSV
-    si = io.StringIO()
-    writer = csv.writer(si)
-    writer.writerow(['exam_id','exam_title','token','name','score','total','answers_detail','submitted_at'])
-    for d in data:
-        writer.writerow([d['exam_id'], d['exam_title'], d['token'], d['name'], d['score'], d['total'], d.get('answers_detail',''), d['submitted_at']])
-    mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
-    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name='results_filtered.csv')
+    # endpoint disabled temporarily while we rework export logic
+    return jsonify({'error': 'results export endpoint disabled temporarily'}), 410
 
 @app.route('/api/subjects')
 def api_subjects():
@@ -1319,183 +1329,86 @@ def approve_teacher():
 
 @app.route('/api/results_json/<exam_id>')
 def results_json(exam_id):
-    """
-    Return results for an exam as JSON including parsed answers_detail.
-    Allowed for admin (admin_password) or teachers (X-Teacher-Token).
-    """
-    teacher = get_teacher_from_request()
-    is_admin = (request.args.get('admin_password') == ADMIN_PASSWORD)
-    if not teacher and not is_admin:
-        return jsonify({'error': 'admin or teacher auth required'}), 401
+    # endpoint disabled temporarily while we rework export/view logic
+    return jsonify({'error': 'results JSON endpoint disabled temporarily'}), 410
 
-    conn = db_conn(); c = conn.cursor()
-    # if teacher (not admin), ensure they own the exam
-    if teacher and not is_admin:
-        c.execute('SELECT teacher_id FROM exams WHERE id=?', (exam_id,))
-        er = c.fetchone()
-        if not er or er['teacher_id'] != teacher['id']:
-            conn.close(); return jsonify({'error': 'not allowed'}), 403
-
-    c.execute('''
-        SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail
-        FROM results r
-        JOIN sessions s ON r.token = s.token
-        WHERE s.exam_id = ?
-        ORDER BY r.submitted_at DESC
-    ''', (exam_id,))
-    rows = c.fetchall(); conn.close()
-
-    out = []
-    for r in rows:
-        try:
-            answers_detail = json.loads(r['answers_detail'] or '[]')
-        except Exception:
-            answers_detail = r['answers_detail'] or []
-        submitted = None
-        try:
-            submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
-        except Exception:
-            submitted = ''
-        out.append({
-            'token': r['token'],
-            'name': r['name'] or '',
-            'score': r['score'],
-            'total': r['total'] if 'total' in r.keys() and r['total'] is not None else None,
-            'submitted_at': submitted,
-            'answers_detail': answers_detail
-        })
-    return jsonify(out)
 
 @app.route('/api/download_exam_results/<exam_id>')
 def download_exam_results(exam_id):
-    """
-    Download exam results as XLSX if pandas available, otherwise CSV fallback.
-    Requires admin_password or teacher token.
-    """
-    teacher = get_teacher_from_request()
-    is_admin = (request.args.get('admin_password') == ADMIN_PASSWORD)
-    if not teacher and not is_admin:
-        return jsonify({'error': 'admin or teacher auth required'}), 401
-
-    # teacher may only download their own exams
-    conn = db_conn(); c = conn.cursor()
-    if teacher and not is_admin:
-        c.execute('SELECT teacher_id FROM exams WHERE id=?', (exam_id,))
-        er = c.fetchone()
-        if not er or er['teacher_id'] != teacher['id']:
-            conn.close(); return jsonify({'error': 'not allowed'}), 403
-
-    c.execute('''
-        SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail
-        FROM results r
-        JOIN sessions s ON r.token = s.token
-        WHERE s.exam_id = ?
-        ORDER BY r.submitted_at DESC
-    ''', (exam_id,))
-    rows = c.fetchall(); conn.close()
-
-    data = []
-    for r in rows:
-        try:
-            answers_detail = json.loads(r['answers_detail'] or '[]')
-        except Exception:
-            answers_detail = r['answers_detail'] or []
-        submitted = ''
-        try:
-            submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
-        except Exception:
-            submitted = ''
-        data.append({
-            'token': r['token'],
-            'name': r['name'] or '',
-            'score': r['score'],
-            'total': r['total'] if 'total' in r.keys() else None,
-            'submitted_at': submitted,
-            'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
-        })
-
-    # Try to return XLSX if pandas available
-    if pd:
-        try:
-            df = pd.DataFrame(data)
-            mem = io.BytesIO()
-            with pd.ExcelWriter(mem, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='results')
-            mem.seek(0)
-            return send_file(mem,
-                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                             as_attachment=True,
-                             download_name=f'results_{exam_id}.xlsx')
-        except Exception:
-            app.logger.exception("failed to build xlsx for exam %s", exam_id)
-
-    # Fallback CSV
-    si = io.StringIO()
-    fieldnames = ['token','name','score','total','submitted_at','answers_detail']
-    writer = csv.DictWriter(si, fieldnames=fieldnames)
-    writer.writeheader()
-    for d in data:
-        writer.writerow(d)
-    mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
-    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'results_{exam_id}.csv')
+    # endpoint disabled temporarily while we rework export logic
+    return jsonify({'error': 'download_exam_results disabled temporarily'}), 410
 
 @app.route('/api/download_subject')
+@admin_required
 def download_subject():
     """
     Download all results for a given subject.
-    Accepts: ?subject=<name>&format=xlsx|csv
-    Requires admin session or admin_password (is_admin_request()).
+    Accepts: ?subject=<name>&exam_id=<id>&format=xlsx|csv
+    If exam_id is provided we use it to resolve the subject (more reliable).
     """
-    if not is_admin_request():
-        return jsonify({'error': 'admin auth required'}), 401
-
     subject = (request.args.get('subject') or '').strip()
-    fmt = (request.args.get('format') or 'xlsx').lower()
+    exam_id = (request.args.get('exam_id') or '').strip()
+    fmt = (request.args.get('format') or 'csv').lower()
+
+    # If exam_id provided, try to resolve subject from the exam -> teacher
+    if exam_id:
+        try:
+            conn = db_conn(); c = conn.cursor()
+            c.execute('SELECT t.subject, e.tag FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
+            er = c.fetchone()
+            if er:
+                # prefer teacher.subject if present
+                subj_from_exam = (er['subject'] or '').strip()
+                if subj_from_exam:
+                    subject = subj_from_exam
+            conn.close()
+        except Exception:
+            pass
+
     if not subject:
-        return jsonify({'error': 'subject required'}), 400
+        return jsonify({'error': 'subject required (or exam_id must resolve a subject)'}), 400
 
     label = _sanitize_filename(subject)
-
-    # prefer an existing per-subject file on disk
     fname_xlsx = os.path.join(BASE_DIR, f'results_{label}.xlsx')
     fname_csv = os.path.join(BASE_DIR, f'results_{label}.csv')
 
-    # if client requested xlsx and file exists, serve it
+    # prefer an existing per-subject file on disk
     if fmt == 'xlsx' and pd and os.path.exists(fname_xlsx):
         return send_file(fname_xlsx,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                          as_attachment=True,
-                         download_name=f'results_{label}.xlsx')
+                         download_name=f'{label}.xlsx')
 
-    # if csv file exists, serve it (works for both formats as fallback)
     if os.path.exists(fname_csv):
         return send_file(fname_csv,
                          mimetype='text/csv',
                          as_attachment=True,
-                         download_name=f'results_{label}.csv')
+                         download_name=f'{label}.csv')
 
-    # otherwise build file from DB (teachers -> exams -> results filtered by subject)
+    # Build from DB (same as before)
     conn = db_conn(); c = conn.cursor()
+    q = '''
+        SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id, COALESCE(t.subject,'') AS subject, COALESCE(e.tag,'') AS tag
+        FROM results r
+        JOIN sessions s ON r.token = s.token
+        LEFT JOIN exams e ON s.exam_id = e.id
+        LEFT JOIN teachers t ON e.teacher_id = t.id
+        WHERE LOWER(TRIM(COALESCE(t.subject,''))) = ?
+        ORDER BY r.submitted_at DESC
+    '''
     try:
-        c.execute('''
-            SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id
-            FROM results r
-            JOIN sessions s ON r.token = s.token
-            LEFT JOIN exams e ON s.exam_id = e.id
-            LEFT JOIN teachers t ON e.teacher_id = t.id
-            WHERE LOWER(TRIM(COALESCE(t.subject,''))) = ?
-            ORDER BY r.submitted_at DESC
-        ''', (subject.lower(),))
+        c.execute(q, (subject.lower(),))
         rows = c.fetchall()
     finally:
         conn.close()
 
+    # prepare csv/xlsx stream and return (unchanged)...
     data = []
     for r in rows:
         try:
             answers_detail = json.loads(r['answers_detail'] or '[]')
         except Exception:
-            answers_detail = r['answers_detail'] or []
+            answers_detail = r['answers_detail'] or ''
         submitted = ''
         try:
             submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
@@ -1511,7 +1424,7 @@ def download_subject():
             'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
         })
 
-    # produce XLSX if requested and pandas available
+    # XLSX if requested and pandas available
     if fmt == 'xlsx' and pd:
         try:
             df = pd.DataFrame(data)
@@ -1522,9 +1435,9 @@ def download_subject():
             return send_file(mem,
                              mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                              as_attachment=True,
-                             download_name=f'results_{label}.xlsx')
+                             download_name=f'{label}.xlsx')
         except Exception:
-            app.logger.exception("failed to build xlsx for subject %s", subject)
+            app.logger.exception("failed to build xlsx for %s", label)
 
     # CSV fallback
     si = io.StringIO()
@@ -1533,7 +1446,143 @@ def download_subject():
     for d in data:
         writer.writerow([d['exam_id'], d['token'], d['name'], d['score'], d['total'], d['submitted_at'], d['answers_detail']])
     mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
-    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'results_{label}.csv')
+    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'{label}.csv')
+
+# serializer for signed temporary downloads
+# uses app.secret_key; ensure app.secret_key is set earlier in file
+def _get_download_serializer():
+    secret = getattr(app, 'secret_key', None) or os.environ.get('FLASK_SECRET', 'dev-secret')
+    return URLSafeTimedSerializer(secret, salt='cbt-download-salt')
+
+# Create a short-lived signed download link (admin-only)
+@app.route('/api/create_download_link')
+@admin_required
+def create_download_link():
+    subject = (request.args.get('subject') or '').strip()
+    tag = (request.args.get('tag') or '').strip()
+    fmt = (request.args.get('format') or 'csv').lower()
+    if not subject and not tag:
+        return jsonify({'error': 'subject or tag required'}), 400
+    payload = {'subject': subject, 'tag': tag, 'format': fmt}
+    s = _get_download_serializer()
+    token = s.dumps(payload)
+    url = url_for('download_token', token=token, _external=True)
+    return jsonify({'ok': True, 'url': url})
+
+# Public download endpoint that accepts a signed token (valid for a short time)
+@app.route('/download/<token>')
+def download_token(token):
+    s = _get_download_serializer()
+    max_age = int(os.environ.get('DOWNLOAD_TOKEN_TTL', '300'))  # seconds, default 5min
+    try:
+        payload = s.loads(token, max_age=max_age)
+    except SignatureExpired:
+        return jsonify({'error': 'download link expired'}), 410
+    except BadSignature:
+        return jsonify({'error': 'invalid download link'}), 400
+
+    subject = payload.get('subject') or ''
+    tag = payload.get('tag') or ''
+    fmt = (payload.get('format') or 'csv').lower()
+
+    # resolve label (prefer subject, else tag)
+    label_key = subject or tag
+    if not label_key:
+        return jsonify({'error': 'no subject/tag in token'}), 400
+    label = _sanitize_filename(label_key)
+
+    # prefer saved files on disk
+    fname_xlsx = os.path.join(BASE_DIR, f'results_{label}.xlsx')
+    fname_csv = os.path.join(BASE_DIR, f'results_{label}.csv')
+    # tag-specific files use prefix results_tag_
+    fname_tag_xlsx = os.path.join(BASE_DIR, f'results_tag_{label}.xlsx')
+    fname_tag_csv = os.path.join(BASE_DIR, f'results_tag_{label}.csv')
+
+    if fmt == 'xlsx' and pd:
+        for path in (fname_xlsx, fname_tag_xlsx):
+            if path and os.path.exists(path):
+                return send_file(path,
+                                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                 as_attachment=True,
+                                 download_name=os.path.basename(path))
+    # csv fallback / if requested csv
+    for path in (fname_csv, fname_tag_csv):
+        if path and os.path.exists(path):
+            return send_file(path, mimetype='text/csv', as_attachment=True, download_name=os.path.basename(path))
+
+    # build from DB: choose by subject first, else by tag
+    conn = db_conn(); c = conn.cursor()
+    try:
+        if subject:
+            q = '''
+            SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id, COALESCE(t.subject,'') AS subject, COALESCE(e.tag,'') AS tag
+            FROM results r
+            JOIN sessions s ON r.token = s.token
+            LEFT JOIN exams e ON s.exam_id = e.id
+            LEFT JOIN teachers t ON e.teacher_id = t.id
+            WHERE LOWER(TRIM(COALESCE(t.subject,''))) = ?
+            ORDER BY r.submitted_at DESC
+            '''
+            c.execute(q, (subject.lower(),))
+        else:
+            q = '''
+            SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id, COALESCE(t.subject,'') AS subject, COALESCE(e.tag,'') AS tag
+            FROM results r
+            JOIN sessions s ON r.token = s.token
+            LEFT JOIN exams e ON s.exam_id = e.id
+            LEFT JOIN teachers t ON e.teacher_id = t.id
+            WHERE LOWER(TRIM(COALESCE(e.tag,''))) = ?
+            ORDER BY r.submitted_at DESC
+            '''
+            c.execute(q, (tag.lower(),))
+        rows = c.fetchall()
+    finally:
+        conn.close()
+
+    data = []
+    for r in rows:
+        try:
+            answers_detail = json.loads(r['answers_detail'] or '[]')
+        except Exception:
+            answers_detail = r['answers_detail'] or ''
+        submitted = ''
+        try:
+            submitted = datetime.fromtimestamp(r['submitted_at']).isoformat() if r['submitted_at'] else ''
+        except Exception:
+            submitted = ''
+        data.append({
+            'exam_id': r['exam_id'] or '',
+            'token': r['token'],
+            'name': r['name'] or '',
+            'score': r['score'],
+            'total': r['total'] if 'total' in r.keys() else '',
+            'submitted_at': submitted,
+            'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
+        })
+
+    # produce xlsx if requested and pandas present
+    if fmt == 'xlsx' and pd:
+        try:
+            df = pd.DataFrame(data)
+            mem = io.BytesIO()
+            with pd.ExcelWriter(mem, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='results')
+            mem.seek(0)
+            return send_file(mem,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             as_attachment=True,
+                             download_name=f'{label}.xlsx')
+        except Exception:
+            app.logger.exception("failed to build xlsx for %s", label)
+
+    # csv fallback
+    si = io.StringIO()
+    writer = csv.writer(si)
+    writer.writerow(['exam_id','token','name','score','total','submitted_at','answers_detail'])
+    for d in data:
+        writer.writerow([d['exam_id'], d['token'], d['name'], d['score'], d['total'], d['submitted_at'], d['answers_detail']])
+    mem = io.BytesIO(); mem.write(si.getvalue().encode('utf-8')); mem.seek(0)
+    return send_file(mem, mimetype='text/csv', as_attachment=True, download_name=f'{label}.csv')
 
 @app.template_filter('datetime')
 def format_datetime(value):
@@ -1541,54 +1590,11 @@ def format_datetime(value):
         return ''
     if isinstance(value, (int, float)):
         dt = datetime.fromtimestamp(value)
-    elif isinstance(value, str):
-        try:
-            dt = datetime.fromisoformat(value)
-        except ValueError:
-            return value
-    else:
-        return str(value)
-    return dt.strftime('%B %d, %Y at %I:%M %p')
-
-# Modify the admin check function
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'admin_token' not in session:
-            return jsonify({'error': 'Admin authentication required'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-# Add this new route for checking admin session
-@app.route('/api/check_admin')
-def check_admin():
-    is_admin = 'admin_token' in session
-    return jsonify({'is_admin': is_admin})
-
-# Update the admin login route
-@app.route('/api/login_admin', methods=['POST'])
-def login_admin():
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-        
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-        session['admin_token'] = str(uuid.uuid4())
-        return jsonify({'ok': True})
-    return jsonify({'error': 'Invalid credentials'}), 401
-
-# Add logout route
-@app.route('/logout')
-def logout():
-    session.pop('admin_token', None)
-    return redirect(url_for('login_page'))
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    return str(value)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', '1') == '1'
     # bind to all interfaces so remote devices (or Docker) can reach it; change host if needed
     app.run(host='0.0.0.0', port=port, debug=debug)
-

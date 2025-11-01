@@ -20,71 +20,76 @@ button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accen
 .preview{margin-top:8px;border:1px dashed #e6eefc;padding:8px;border-radius:6px;background:#fbfdff}
 .error{background:#fef2f2;border-color:#ef4444}
 .success{background:#ecfdf5;border-color:#10b981;color:#059669}
-.scores-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 8px;
-  font-size: 14px;
-}
-.scores-table th, .scores-table td {
-  padding: 12px;
-  text-align: left;
-  border-bottom: 1px solid #eef4ff;
-}
-.scores-table th {
-  background: #fbfdff;
-  font-weight: 600;
-  color: var(--accent);
-}
-.scores-table tr:hover {
-  background: #fbfdff;
-}
-.scores-table tbody tr:nth-child(even) {
-  background: #fafbff;
-}
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.status-pass { background: #ecfdf5; color: #059669; }
-.status-fail { background: #fef2f2; color: var(--danger); }
-#scoresSummary { margin-bottom: 12px; font-weight: 500; color: var(--accent); }
+.scores-table { width:100%; border-collapse: collapse; margin-top:8px; font-size:14px; }
+.scores-table th, .scores-table td { padding:12px; text-align:left; border-bottom:1px solid #eef4ff; }
+.scores-table th { background:#fbfdff; font-weight:600; color:var(--accent); }
+.scores-table tr:hover { background:#fbfdff; }
+.scores-table tbody tr:nth-child(even) { background:#fafbff; }
+.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; }
+.status-pass { background:#ecfdf5; color:#059669; }
+.status-fail { background:#fef2f2; color:var(--danger); }
+#scoresSummary { margin-bottom:12px; font-weight:500; color:var(--accent); }
 </style>
 </head>
 <body>
   {% extends "base.html" %}
   {% block title %}Teacher · CBT{% endblock %}
   {% block content %}
-  <div class="header">
-    <div><a href="/"><strong>CBT</strong></a><a href="/teacher">Teacher</a><a href="/admin">Admin</a></div>
-    <div class="small">Signed in: <span id="teacherName">-</span></div>
-  </div>
+  <style>
+:root{--muted:#6b7280;--accent:#0b5fff;--danger:#ef4444}
+.header{background:#fff;border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
+.header a{color:var(--accent);text-decoration:none;margin-right:12px}
+.container{max-width:980px;margin:24px auto;padding:16px}
+.card{background:#fff;padding:16px;border-radius:8px}
+.row{display:flex;gap:12px;align-items:center}
+input,textarea,select,button{font-size:14px;padding:8px;border-radius:6px;border:1px solid #e6eefc}
+button{background:var(--accent);color:#fff;border:none;cursor:pointer}
+button:disabled{opacity:0.6;cursor:not-allowed}
+button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accent)}
+.small{color:var(--muted);font-size:13px}
+.preview{margin-top:8px;border:1px dashed #e6eefc;padding:8px;border-radius:6px;background:#fbfdff}
+.error{background:#fef2f2;border-color:#ef4444}
+.success{background:#ecfdf5;border-color:#10b981;color:#059669}
+.scores-table { width:100%; border-collapse: collapse; margin-top:8px; font-size:14px; }
+.scores-table th, .scores-table td { padding:12px; text-align:left; border-bottom:1px solid #eef4ff; }
+.scores-table th { background:#fbfdff; font-weight:600; color:var(--accent); }
+.scores-table tr:hover { background:#fbfdff; }
+.scores-table tbody tr:nth-child(even) { background:#fafbff; }
+.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; }
+.status-pass { background:#ecfdf5; color:#059669; }
+.status-fail { background:#fef2f2; color:var(--danger); }
+#scoresSummary { margin-bottom:12px; font-weight:500; color:var(--accent); }
+</style>
 
-  <div class="container">
-    <div class="card">
-      <h2>Teacher</h2>
-      <p class="small">Create exams and bulk-upload questions. You will be prompted to overwrite or append if questions already exist.</p>
+<div class="header">
+  <div><a href="/"><strong>CBT</strong></a><a href="/teacher">Teacher</a><a href="/admin">Admin</a></div>
+  <div class="small">Signed in: <span id="teacherName">-</span></div>
+</div>
 
-      <h3 style="margin-top:12px">Create exam</h3>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="teacherCreateTitle" placeholder="Exam title" style="flex:1;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-        <input id="teacherCreateDuration" type="number" value="30" style="width:110px;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-        <button id="teacherCreate" class="btn">Create</button>
-      </div>
+<div class="container">
+  <div class="card">
+    <h2>Teacher</h2>
+    <p class="small">Create exams and bulk-upload questions. You will be prompted to overwrite or append if questions already exist.</p>
 
-      <h3 style="margin-top:12px">Bulk upload questions (CSV / XLSX / DOCX)</h3>
-      <form id="uploadQuestionsForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center">
-        <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls,.docx" required />
-        <select id="uqExamSelect" style="min-width:260px"></select>
-        <button id="uploadBtn" type="submit" class="btn">Upload Questions</button>
-        <button id="previewBtn" type="button" class="link-btn">Preview</button>
-      </form>
-      <div id="uploadQuestionsInfo" class="small" style="margin-top:8px"></div>
-      <div id="previewTable" class="small" style="margin-top:8px;display:none;max-height:260px;overflow:auto;border:1px dashed #e6eefc;padding:8px;border-radius:6px"></div>
+    <h3 style="margin-top:12px">Create exam</h3>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="teacherCreateTitle" placeholder="Exam title" style="flex:1;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <input id="teacherCreateDuration" type="number" value="30" style="width:110px;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <input id="teacherCreateTag" placeholder="Tag (optional)" style="width:180px;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+      <button id="teacherCreate" class="btn">Create</button>
     </div>
+
+    <h3 style="margin-top:12px">Bulk upload questions (CSV / XLSX / DOCX)</h3>
+    <form id="uploadQuestionsForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center">
+      <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls,.docx" required />
+      <select id="uqExamSelect" style="min-width:260px"></select>
+      <button id="uploadBtn" type="submit" class="btn">Upload Questions</button>
+      <button id="previewBtn" type="button" class="link-btn">Preview</button>
+    </form>
+    <div id="uploadQuestionsInfo" class="small" style="margin-top:8px"></div>
+    <div id="previewTable" class="small" style="margin-top:8px;display:none;max-height:260px;overflow:auto;border:1px dashed #e6eefc;padding:8px;border-radius:6px"></div>
   </div>
+</div>
 
 <script>
 function teacherToken(){ return localStorage.getItem('cbt:teacher_token'); }
@@ -96,15 +101,16 @@ async function loadExams(){
   data.forEach(e=>{
     const opt = document.createElement('option');
     opt.value = e.id;
-    opt.text = `${e.title} • ${e.started ? 'OPEN' : 'CLOSED'}`;
+    opt.text = `${e.title} • ${e.started ? 'OPEN' : 'CLOSED'}${e.tag ? ' • ' + e.tag : ''}`;
     sel.appendChild(opt);
   });
 }
 document.getElementById('teacherCreate').addEventListener('click', async ()=>{
   const title = document.getElementById('teacherCreateTitle').value.trim();
   const duration = Number(document.getElementById('teacherCreateDuration').value) || 30;
+  const tag = document.getElementById('teacherCreateTag').value.trim() || undefined;
   if(!title){ alert('enter title'); return; }
-  const res = await fetch('/api/teacher_create_exam', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Teacher-Token': teacherToken() }, body: JSON.stringify({ title, duration })});
+  const res = await fetch('/api/teacher_create_exam', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Teacher-Token': teacherToken() }, body: JSON.stringify({ title, duration, tag })});
   const js = await res.json();
   if(js.ok){ alert('Created exam: ' + js.exam_id); loadExams(); } else alert(js.error || 'failed');
 });
@@ -192,6 +198,6 @@ document.getElementById('previewBtn').addEventListener('click', async ()=>{
 
 loadExams();
 </script>
+{% endblock %}
 </body>
 </html>
-{% endblock %}

@@ -1,0 +1,27 @@
+Question: What is the correct sequence of steps in a flowchart to ask for a user's name, output it, then ask for their surname, and output both?
+A. Input name → Output name → Input surname → Output name and surname
+B. Input surname → Output surname → Input name → Output name and surname
+C. Input name → Input surname → Output surname → Output name
+D. Input name and surname → Output name → Output surname
+Answer: A
+
+Question: Which grade is assigned to a score of 65 in an algorithm where 70-100 = A, 60-69 = B, 50-59 = C, 45-49 = D, 0-44 = F?
+A. A
+B. B
+C. C
+D. D
+Answer: B
+
+Question: What is a presentation package?
+A. A software for creating slideshows
+B. A database management tool
+C. A word processing program
+D. A spreadsheet application
+Answer: A
+
+Question: Which of the following is a correct step in creating a PowerPoint slide?
+A. Insert a new slide from the Home tab
+B. Run a query to generate a slide
+C. Edit the slide’s code in HTML
+D. Export the slide to a database
+Answer: A
