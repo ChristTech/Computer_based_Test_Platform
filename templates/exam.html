@@ -33,6 +33,141 @@ button.nav-btn:hover{background:var(--accent);color:#fff}
 #unansweredList div:hover{text-decoration:underline}
 .error-notice{background:#fef2f2;border:1px solid var(--danger);padding:12px;border-radius:8px;margin-bottom:16px}
 @media (max-width:600px){.row{flex-direction:column}.nav-buttons{justify-content:center;gap:8px}}
+
+/* Calculator popup styles (light theme + smooth animation) */
+.calc-popup {
+  position: fixed;
+  top: 50%;
+  right: -380px; /* hidden off-screen by default */
+  transform: translateY(-50%);
+  width: 340px;
+  max-width: 95vw;
+  z-index: 2000;
+  background: var(--card-bg);
+  box-shadow: 0 6px 24px rgba(11, 37, 64, 0.15);
+  border: 1px solid #e6eefc;
+  border-radius: 12px;
+  padding: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: right 0.35s cubic-bezier(.4,.0,.2,1), opacity 0.35s ease;
+}
+
+.calc-popup.open {
+  right: 20px; /* slide into view */
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Header */
+.calc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* Close button */
+.calc-close-btn {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.calc-close-btn:hover {
+  background: rgba(11, 95, 255, 0.1);
+}
+
+/* Calculator container */
+.calculator {
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--card-bg);
+  border: 1px solid #e6eefc;
+}
+
+/* Display */
+.calculator-display {
+  height: 90px;
+  background: linear-gradient(to bottom, #f8fbff, #eef4ff);
+  color: #0b2540;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 12px;
+  font-size: 1.8rem;
+  border-bottom: 1px solid #dbeefe;
+}
+.previous-operand {
+  font-size: 0.9rem;
+  color: var(--muted);
+  height: 18px;
+}
+
+/* Buttons grid */
+.calculator-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.calculator-button {
+  padding: 14px 0;
+  font-size: 1.1rem;
+  border: none;
+  outline: none;
+  background: #eef4ff;
+  color: #0b2540;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border-radius: 6px;
+  font-weight: 500;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+}
+.calculator-button:hover {
+  background: #dbeefe;
+  transform: translateY(-1px);
+}
+
+/* Special buttons */
+.operator {
+  background: var(--accent);
+  color: #fff;
+}
+.operator:hover { background: #0056b3; }
+
+.clear {
+  background: #fef2f2;
+  color: var(--danger);
+  font-weight: bold;
+}
+.clear:hover { background: #fee2e2; }
+
+.equals {
+  background: var(--success);
+  color: #fff;
+  font-weight: bold;
+}
+.equals:hover { background: #047857; }
+
+.calc-footer {
+  margin-top: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 </style>
 </head>
 <body>
@@ -63,6 +198,7 @@ button.nav-btn:hover{background:var(--accent);color:#fff}
         <div>
           <button id="reviewBtn">Review Unanswered</button>
           <button id="submitBtn">Submit Answers</button>
+          <button id="calcToggleBtn" class="nav-btn" type="button">Calculator</button>
         </div>
       </div>
 
@@ -73,6 +209,51 @@ button.nav-btn:hover{background:var(--accent);color:#fff}
         <button id="nextBtn" class="btn" style="min-width:100px">Next</button>
       </div>
       <div id="unansweredList" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Calculator popup -->
+  <div id="calcPopup" class="calc-popup" aria-hidden="true" role="dialog" aria-labelledby="calcTitle">
+    <div class="calc-header">
+      <div id="calcTitle"></div>
+        <button id="calcCloseBtn" class="calc-close-btn" title="Close">⤫</button>
+      <div class="calc-popup"></div>
+    <div class="calc-container">
+    <div class="calc-header">
+        <!-- <div>
+          <button id="calcPinBtn" class="calc-close-btn" title="Close (toggle)">⤫</button>
+        </div> -->
+      </div>
+
+      <div class="calc-container">
+        <div class="calculator" id="embeddedCalculator" aria-hidden="false">
+          <div class="calculator-display">
+              <div class="previous-operand" id="calc-previous-operand"></div>
+              <div id="calc-display">0</div>
+          </div>
+          <div class="calculator-buttons">
+                  <button class="calculator-button clear" data-action="clear">AC</button>
+                  <button class="calculator-button operator" data-action="op" data-val="/">/</button>
+                  <button class="calculator-button operator" data-action="op" data-val="*">×</button>
+                  <button class="calculator-button operator" data-action="del">⌫</button>
+                  <button class="calculator-button" data-action="num" data-val="7">7</button>
+                  <button class="calculator-button" data-action="num" data-val="8">8</button>
+                  <button class="calculator-button" data-action="num" data-val="9">9</button>
+                  <button class="calculator-button operator" data-action="op" data-val="-">-</button>
+                  <button class="calculator-button" data-action="num" data-val="4">4</button>
+                  <button class="calculator-button" data-action="num" data-val="5">5</button>
+                  <button class="calculator-button" data-action="num" data-val="6">6</button>
+                  <button class="calculator-button operator" data-action="op" data-val="+">+</button>
+                  <button class="calculator-button" data-action="num" data-val="1">1</button>
+                  <button class="calculator-button" data-action="num" data-val="2">2</button>
+                  <button class="calculator-button" data-action="num" data-val="3">3</button>
+                  <button class="calculator-button equals" data-action="eval">=</button>
+                  <button class="calculator-button" data-action="num" data-val="0" style="grid-column:span 2">0</button>
+                  <button class="calculator-button" data-action="num" data-val=".">.</button>
+          </div>
+        </div>
+      </div>
+      <div class="calc-footer">Calculator idea by Nathaniel, built by CHRISTTech</div>
     </div>
   </div>
 
@@ -349,52 +530,148 @@ async function autoSubmit() {
 }
 
 submitBtn.addEventListener('click', async () => {
-  if (remaining <= 0) {
-    serverNotice.innerText = 'Exam time has expired. Answers already submitted.';
-    serverNotice.style.color = 'var(--danger)';
-    return;
+  if (!checkUnanswered()) {
+    const confirmed = confirm('You have unanswered questions. Do you really want to submit?');
+    if (!confirmed) return;
   }
-  if (!checkUnanswered() || !confirm('Submit your answers?')) return;
   lockUI();
+  draftStatus.innerText = 'Submitting...';
   try {
     const payload = { answers };
     const storedName = localStorage.getItem('cbt:student_name');
     if (storedName) payload.name = storedName;
-    const res = await fetch('/api/submit/' + token, {
+    await fetch('/api/submit/' + token, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (res.ok) {
-      window.removeEventListener('beforeunload', beforeUnloadHandler);
-      window.location.href = '/results/' + token;
-    } else {
-      const js = await res.json().catch(() => ({}));
-      serverNotice.innerText = 'Submit failed: ' + (js.error || res.status);
-      serverNotice.style.color = 'var(--danger)';
-      const retryBtn = document.createElement('button');
-      retryBtn.innerText = 'Retry Submit';
-      retryBtn.addEventListener('click', () => submitBtn.click());
-      serverNotice.appendChild(retryBtn);
-      submitBtn.disabled = false;
-    }
+    window.location.href = '/results/' + token;
   } catch (e) {
-    serverNotice.innerText = 'Network error. Please try again.';
-    serverNotice.style.color = 'var(--danger)';
-    const retryBtn = document.createElement('button');
-    retryBtn.innerText = 'Retry Submit';
-    retryBtn.addEventListener('click', () => submitBtn.click());
-    serverNotice.appendChild(retryBtn);
-    submitBtn.disabled = false;
+    console.error('Submit failed:', e);
+    lockUI();
+    draftStatus.innerText = 'Submit failed. Please try again.';
+    draftStatus.style.color = 'var(--danger)';
   }
 });
 
-// Start timer
-if (remaining > 0 && questions.length > 0) {
-  updateTimer();
-  const timerInterval = setInterval(updateTimer, 1000);
-}
+// Calculator toggle + logic (scoped to avoid collisions)
+(function(){
+  const popup = document.getElementById('calcPopup');
+  const toggleBtn = document.getElementById('calcToggleBtn');
+  const closeBtn = document.getElementById('calcCloseBtn');
+  const display = popup.querySelector('#calc-display');
+  const prevDisplay = popup.querySelector('#calc-previous-operand');
+  const buttons = popup.querySelectorAll('.calculator-button');
+
+  let calcState = {
+    current: '0',
+    previous: '',
+    operation: null,
+    shouldReset: false
+  };
+
+  function formatDisplay(v){ return String(v); }
+
+  function resetCalcScreen(){
+    calcState.current = '';
+    calcState.shouldReset = false;
+  }
+
+  function appendCalcNumber(n){
+    if (calcState.current === '0' || calcState.shouldReset) resetCalcScreen();
+    if (n === '.' && calcState.current.includes('.')) return;
+    calcState.current = (calcState.current || '') + n;
+    updateCalcUI();
+  }
+
+  function chooseCalcOp(op){
+    if (calcState.current === '') return;
+    if (calcState.previous !== ''){
+      computeCalc();
+    }
+    calcState.operation = op;
+    calcState.previous = calcState.current;
+    calcState.current = '';
+    updateCalcUI();
+  }
+
+  function computeCalc(){
+    const prev = parseFloat(calcState.previous);
+    const curr = parseFloat(calcState.current);
+    if (isNaN(prev) || isNaN(curr)) return;
+    let out;
+    switch(calcState.operation){
+      case '+': out = prev + curr; break;
+      case '-': out = prev - curr; break;
+      case '*': out = prev * curr; break;
+      case '/': out = curr === 0 ? '∞' : (prev / curr); break;
+      default: return;
+    }
+    calcState.current = String(out);
+    calcState.operation = null;
+    calcState.previous = '';
+    calcState.shouldReset = true;
+    updateCalcUI();
+  }
+
+  function clearCalc(){
+    calcState.current = '0'; calcState.previous=''; calcState.operation=null; calcState.shouldReset=false;
+    updateCalcUI();
+  }
+
+  function delCalc(){
+    if (calcState.shouldReset){ calcState.current='0'; calcState.shouldReset=false; updateCalcUI(); return; }
+    if (!calcState.current || calcState.current.length <= 1) calcState.current='0';
+    else calcState.current = calcState.current.slice(0,-1);
+    updateCalcUI();
+  }
+
+  function updateCalcUI(){
+    display.textContent = formatDisplay(calcState.current || '0');
+    prevDisplay.textContent = (calcState.previous ? (calcState.previous + (calcState.operation ? (' ' + calcState.operation) : '')) : '');
+  }
+
+  // attach button handlers
+  buttons.forEach(btn=>{
+    const action = btn.dataset.action;
+    const val = btn.dataset.val;
+    btn.addEventListener('click', (e)=>{
+      if (action === 'num') appendCalcNumber(val);
+      else if (action === 'op') chooseCalcOp(val);
+      else if (action === 'eval') computeCalc();
+      else if (action === 'clear') clearCalc();
+      else if (action === 'del') delCalc();
+    });
+  });
+
+  // Toggle overlay
+function toggleCalc() {
+  const open = popup.classList.toggle('open');
+  popup.setAttribute('aria-hidden', String(!open));
+  if (open) {
+      setTimeout(() => popup.querySelector('[data-action="num"]')?.focus(), 150);
+    }
+  }
+  toggleBtn.addEventListener('click', toggleCalc);
+  closeBtn.addEventListener('click', toggleCalc);
+
+
+  // allow keyboard interaction when calculator open (digits + ops + Enter/Esc)
+  document.addEventListener('keydown', (ev)=>{
+    if (!overlay.classList.contains('open')) return;
+    if (/^[0-9]$/.test(ev.key)) { appendCalcNumber(ev.key); ev.preventDefault(); }
+    if (ev.key === '.') { appendCalcNumber('.'); ev.preventDefault(); }
+    if (['+','-','*','/'].includes(ev.key)) { chooseCalcOp(ev.key); ev.preventDefault(); }
+    if (ev.key === 'Enter') { computeCalc(); ev.preventDefault(); }
+    if (ev.key === 'Backspace') { delCalc(); ev.preventDefault(); }
+    if (ev.key === 'Escape') { toggleCalc(); ev.preventDefault(); }
+  });
+
+  // initialize UI
+  updateCalcUI();
+})();
 </script>
+
 </body>
 </html>
 {% endblock %}
