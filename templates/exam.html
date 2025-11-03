@@ -504,6 +504,10 @@ function updateTimer() {
   remaining = Math.max(0, remaining - 1);
 }
 
+//Start countdown timer
+const timerInterval = setInterval(updateTimer, 1000);
+updateTimer();
+
 function lockUI() {
   document.querySelectorAll('input, button').forEach(el => el.classList.add('disabled'));
   submitBtn.disabled = true;
