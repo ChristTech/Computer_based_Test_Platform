@@ -45,6 +45,36 @@ body{font-family:Inter,system-ui,Arial;margin:20px;background:#f7fbff}
 
     <h3>Pending teachers</h3>
     <div id="pendingTeachers" class="small" style="margin-top:8px">Loading...</div>
+
+    <hr style="margin:12px 0"/>
+
+    <h3>Classes</h3>
+    <div class="small" style="margin-top:8px">
+      <div style="margin-bottom:10px">
+        <label><strong>Create class</strong></label><br/>
+        <input id="newClassName" placeholder="e.g. SS1" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+        <button id="createClassBtn" class="link-btn" style="margin-left:8px">Create</button>
+        <span id="createClassMsg" class="small" style="margin-left:8px"></span>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+        <div style="flex:1">
+          <label><strong>Class</strong></label><br/>
+          <select id="adminClassSelect" style="width:100%;padding:8px;border-radius:6px;border:1px solid #e6eefc">
+            <option value="">Loading classes...</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <label><strong>Add student to class</strong></label><br/>
+          <input id="newStudentName" placeholder="Student name" style="width:100%;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
+        </div>
+        <div style="align-self:flex-end">
+          <button id="addStudentBtn" class="link-btn">Add</button>
+        </div>
+      </div>
+
+      <div id="classStudentsList" class="small" style="margin-top:8px">Select a class to view students.</div>
+    </div>
   </div>
 </div>
 
@@ -153,40 +183,124 @@ document.addEventListener('click', function(ev){
   });
 });
 
-// pending teachers (unchanged)
-async function loadPending(){
-  const out = document.getElementById('pendingTeachers');
-  out.innerText = 'Loading...';
-  try{
-    const r = await fetch('/api/pending_teachers');
-    if(!r.ok){ out.innerText = 'Failed to load'; return; }
-    const list = await r.json();
-    if(!list || !list.length){ out.innerText = 'No pending teachers'; return; }
-    out.innerHTML = '';
-    list.forEach(t=>{
-      const div = document.createElement('div'); div.style.marginBottom='8px';
-      div.innerHTML = `<div style="padding:10px;border:1px solid #eef4ff;border-radius:8px">
-        <div style="font-weight:600">${t.name} <span style="font-weight:400;color:#666">• ${t.subject || ''}</span></div>
-        <div class="small" style="margin-top:6px">id: ${t.id}</div>
-        <div style="margin-top:8px"><button class="link-btn approve" data-id="${t.id}">Approve</button></div>
-      </div>`;
-      out.appendChild(div);
-    });
-    document.querySelectorAll('.approve').forEach(btn=>{
-      btn.addEventListener('click', async (ev)=>{
-        const id = ev.target.dataset.id;
-        const pw = prompt('Admin password:');
-        if(pw===null) return;
-        const res = await fetch('/api/approve_teacher', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({teacher_id: id, admin_password: pw})});
-        const js = await res.json().catch(()=>({}));
-        if(js && js.ok){ alert('Teacher approved. Token: ' + js.teacher_token); loadPending(); loadExams(); } else { alert('Approve failed: ' + (js.error||'unknown')); }
-      });
-    });
-  }catch(e){ out.innerText = 'Failed to load'; }
-}
+    // pending teachers (unchanged)
+    async function loadPending(){
+      const out = document.getElementById('pendingTeachers');
+      out.innerText = 'Loading...';
+      try{
+        const r = await fetch('/api/pending_teachers');
+        if(!r.ok){ out.innerText = 'Failed to load'; return; }
+        const list = await r.json();
+        if(!list || !list.length){ out.innerText = 'No pending teachers'; return; }
+        out.innerHTML = '';
+        list.forEach(t=>{
+          const div = document.createElement('div'); div.style.marginBottom='8px';
+          div.innerHTML = `<div style="padding:10px;border:1px solid #eef4ff;border-radius:8px">
+            <div style="font-weight:600">${t.name} <span style="font-weight:400;color:#666">• ${t.subject || ''}</span></div>
+            <div class="small" style="margin-top:6px">id: ${t.id}</div>
+            <div style="margin-top:8px"><button class="link-btn approve" data-id="${t.id}">Approve</button></div>
+          </div>`;
+          out.appendChild(div);
+        });
+        document.querySelectorAll('.approve').forEach(btn=>{
+          btn.addEventListener('click', async (ev)=>{
+            const id = ev.target.dataset.id;
+            const pw = prompt('Admin password:');
+            if(pw===null) return;
+            const res = await fetch('/api/approve_teacher', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({teacher_id: id, admin_password: pw})});
+            const js = await res.json().catch(()=>({}));
+            if(js && js.ok){ alert('Teacher approved. Token: ' + js.teacher_token); loadPending(); loadExams(); } else { alert('Approve failed: ' + (js.error||'unknown')); }
+          });
+        });
+      }catch(e){ out.innerText = 'Failed to load'; }
+    }
 
-loadExams(); loadPending();
-</script>
+    async function loadClassesAdmin(){
+      const sel = document.getElementById('adminClassSelect');
+      sel.innerHTML = '<option value="">Loading...</option>';
+      try{
+        const r = await fetch('/api/list_classes');
+        if(!r.ok){ sel.innerHTML = '<option value="">(failed)</option>'; return; }
+        const list = await r.json();
+        sel.innerHTML = '<option value="">-- Select class --</option>';
+        list.forEach(c => {
+          const o = document.createElement('option'); o.value = c.name; o.text = c.name; sel.appendChild(o);
+        });
+        sel.addEventListener('change', ()=> loadClassStudents(sel.value));
+      }catch(e){
+        sel.innerHTML = '<option value="">(error)</option>';
+      }
+    }
+
+    async function createClass(){
+      if(!await ensureAdminOrRedirect()) return;
+      const name = (document.getElementById('newClassName').value || '').trim();
+      const msg = document.getElementById('createClassMsg');
+      if(!name){ msg.innerText = 'Name required'; return; }
+      msg.innerText = 'Creating...';
+      try{
+        const r = await fetch('/api/create_class', {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})
+        });
+        const js = await r.json().catch(()=>({}));
+        if(r.ok && js.ok){
+          msg.innerText = 'Created';
+          document.getElementById('newClassName').value = '';
+          loadClassesAdmin();
+        } else {
+          msg.innerText = js.error || 'failed';
+        }
+      }catch(e){ msg.innerText = 'network'; }
+      setTimeout(()=>{ msg.innerText = ''; }, 2500);
+    }
+
+    async function loadClassStudents(className){
+      const out = document.getElementById('classStudentsList');
+      if(!className){ out.innerText = 'Select a class to view students.'; return; }
+      out.innerText = 'Loading...';
+      try{
+        const r = await fetch('/api/list_class_students?class=' + encodeURIComponent(className));
+        if(!r.ok){ out.innerText = 'Failed to load'; return; }
+        const list = await r.json();
+        if(!list || !list.length){ out.innerText = 'No students in ' + className; return; }
+        out.innerHTML = '';
+        list.forEach(s=>{
+          const div = document.createElement('div');
+          div.style.padding='8px'; div.style.border='1px solid #eef4ff'; div.style.borderRadius='6px'; div.style.marginBottom='6px';
+          div.innerHTML = `<strong>${s.name}</strong> <span class="small" style="margin-left:8px;color:#666">id: ${s.id}</span>`;
+          out.appendChild(div);
+        });
+      }catch(e){ out.innerText = 'Failed to load'; }
+    }
+
+    async function addStudentToClass(){
+      if(!await ensureAdminOrRedirect()) return;
+      const className = (document.getElementById('adminClassSelect').value || '').trim();
+      const studentName = (document.getElementById('newStudentName').value || '').trim();
+      const out = document.getElementById('classStudentsList');
+      if(!className){ out.innerText = 'Choose a class first'; return; }
+      if(!studentName){ out.innerText = 'Enter student name'; return; }
+      try{
+        const r = await fetch('/api/add_class_student', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ class: className, student_name: studentName })
+        });
+        const js = await r.json().catch(()=>({}));
+        if(r.ok && js.ok){
+          document.getElementById('newStudentName').value = '';
+          loadClassStudents(className);
+        } else {
+          out.innerText = js.error || 'failed to add';
+        }
+      }catch(e){ out.innerText = 'network error'; }
+    }
+
+    document.getElementById('createClassBtn').addEventListener('click', createClass);
+    document.getElementById('addStudentBtn').addEventListener('click', addStudentToClass);
+
+     loadExams(); loadPending();
+     loadClassesAdmin();
+   </script>
 {% endblock %}
 </body>
 </html>

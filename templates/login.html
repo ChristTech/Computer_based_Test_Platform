@@ -1,177 +1,299 @@
 {% extends "base.html" %}
 {% block title %}Login · CBT{% endblock %}
 {% block content %}
-<div class="card">
-  <h2>Login</h2>
+<style>
+.container{max-width:820px;margin:30px auto}
+.card{background:#fff;padding:18px;border-radius:10px}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tab{padding:8px 12px;border-radius:6px;background:#f3f6ff;cursor:pointer}
+.tab.active{background:#0b5fff;color:#fff}
+.group{display:none}
+.group.active{display:block}
+.row{display:flex;gap:8px;align-items:center}
+input,select,button{padding:8px;border-radius:6px;border:1px solid #e6eefc}
+button{background:#0b5fff;color:#fff;border:none;cursor:pointer}
+.small{color:#6b7280;font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:800px){ .grid{grid-template-columns:1fr}}
+</style>
 
-  <div class="tabs" style="display:flex;gap:8px;margin-bottom:12px">
-    <div id="tab-student" class="tab active" style="padding:8px 12px;border-radius:6px;cursor:pointer;background:#0b5fff;color:#fff">Student</div>
-    <div id="tab-teacher" class="tab" style="padding:8px 12px;border-radius:6px;cursor:pointer">Teacher</div>
-    <div id="tab-admin" class="tab" style="padding:8px 12px;border-radius:6px;cursor:pointer">Admin</div>
-  </div>
+<div class="container">
+  <div class="card">
+    <h2>CBT Platform — Login</h2>
+    <p class="small">Choose Admin, Teacher or Student login below.</p>
 
-  <div id="studentPane">
-    <p class="small">Enter your name to continue.</p>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <input id="student_name" placeholder="Full name" style="flex:1;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <button id="student_continue" class="btn">Continue</button>
+    <div class="tabs">
+      <div class="tab active" data-target="studentPanel">Student</div>
+      <div class="tab" data-target="teacherPanel">Teacher</div>
+      <div class="tab" data-target="adminPanel">Admin</div>
     </div>
-  </div>
 
-  <div id="teacherPane" style="display:none">
-    <p class="small">Teachers: register or login. Registration is subject to admin approval.</p>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <input id="teacher_name" placeholder="Name" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <input id="teacher_pw" placeholder="Password" type="password" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <select id="teacher_subject" style="padding:8px;border-radius:6px;border:1px solid #e6eefc;min-width:160px">
-        <option value="">(select subject)</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button id="teacher_login" class="btn">Login</button>
-      <button id="teacher_register" class="btn" style="background:#0a8fef">Register</button>
-    </div>
-    <div id="teacher_msg" class="small" style="margin-top:8px;color:#333"></div>
-  </div>
+    <div class="grid">
+      <!-- Student panel (original) -->
+      <div id="studentPanel" class="group active">
+        <h3>Student login</h3>
+        <p class="small">Select your class, then choose your name, then pick the test to start.</p>
 
-  <div id="adminPane" style="display:none">
-    <p class="small">Enter admin credentials to access the admin panel.</p>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <input id="admin_username" placeholder="Username" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <input id="admin_pw" placeholder="Password" type="password" style="padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <button id="admin_login" class="btn">Admin Login</button>
-    </div>
-    <div id="admin_msg" class="small" style="margin-top:8px;color:#333"></div>
-  </div>
+        <div style="margin-top:12px">
+          <label>Class</label><br/>
+          <select id="classSelect"><option value="">Loading classes...</option></select>
+        </div>
 
-  <div style="margin-top:12px">
-    <a href="/admin" class="link-btn">Admin panel</a>
+        <div style="margin-top:12px">
+          <label>Name</label><br/>
+          <select id="studentSelect"><option value="">Select class first</option></select>
+        </div>
+
+        <div style="margin-top:12px">
+          <label>Test</label><br/>
+          <select id="examSelect"><option value="">Loading open tests...</option></select>
+        </div>
+
+        <div style="margin-top:16px">
+          <button id="startBtn">Start Test</button>
+          <div id="loginMsg" class="small" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- Teacher panel -->
+      <div id="teacherPanel" class="group">
+        <h3>Teacher login</h3>
+        <p class="small">Enter your teacher account (must be approved by admin).</p>
+
+        <div id="teacherAuth">
+          <div style="margin-top:8px">
+            <label>Name</label><br/>
+            <input id="teacherName" type="text" placeholder="Teacher name" />
+          </div>
+          <div style="margin-top:8px">
+            <label>Password</label><br/>
+            <input id="teacherPass" type="password" placeholder="Password" />
+          </div>
+          <div style="margin-top:8px">
+            <button id="teacherLoginBtn">Login as Teacher</button>
+            <button id="showTeacherRegister" style="margin-left:8px;background:#fff;color:#0b5fff;border:1px solid #e6eefc">Register</button>
+          </div>
+          <div id="teacherMsg" class="small" style="margin-top:8px"></div>
+        </div>
+
+        <div id="teacherRegister" style="display:none">
+          <p class="small">Register a new teacher account. Admin approval is required.</p>
+          <div style="margin-top:8px">
+            <label>Name</label><br/>
+            <input id="regTeacherName" type="text" placeholder="Full name" />
+          </div>
+          <div style="margin-top:8px">
+            <label>Password</label><br/>
+            <input id="regTeacherPass" type="password" placeholder="Choose a password" />
+          </div>
+          <div style="margin-top:8px">
+            <label>Subject (optional)</label><br/>
+            <input id="regTeacherSubject" type="text" placeholder="e.g. Mathematics" />
+          </div>
+          <div style="margin-top:8px">
+            <button id="teacherRegisterBtn">Register</button>
+            <button id="cancelTeacherRegister" style="margin-left:8px;background:#fff;color:#0b5fff;border:1px solid #e6eefc">Cancel</button>
+          </div>
+          <div id="teacherRegMsg" class="small" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- Admin panel -->
+      <div id="adminPanel" class="group">
+        <h3>Admin login</h3>
+        <p class="small">Use admin credentials to manage approvals and exams.</p>
+        <div style="margin-top:8px">
+          <label>Username</label><br/>
+          <input id="adminUser" type="text" placeholder="admin" />
+        </div>
+        <div style="margin-top:8px">
+          <label>Password</label><br/>
+          <input id="adminPass" type="password" placeholder="password" />
+        </div>
+        <div style="margin-top:12px">
+          <button id="adminLoginBtn">Login as Admin</button>
+          <div id="adminMsg" class="small" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-const tabStudent = document.getElementById('tab-student');
-const tabTeacher = document.getElementById('tab-teacher');
-const tabAdmin = document.getElementById('tab-admin');
-const studentPane = document.getElementById('studentPane');
-const teacherPane = document.getElementById('teacherPane');
-const adminPane = document.getElementById('adminPane');
+// tabs
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', function(){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.group').forEach(g=>g.classList.remove('active'));
+  this.classList.add('active');
+  document.getElementById(this.getAttribute('data-target')).classList.add('active');
+}));
 
-tabStudent.onclick = ()=>{
-  tabStudent.style.background='#0b5fff'; tabStudent.style.color='#fff';
-  tabTeacher.style.background=''; tabTeacher.style.color='';
-  tabAdmin.style.background=''; tabAdmin.style.color='';
-  studentPane.style.display='block'; teacherPane.style.display='none'; adminPane.style.display='none';
+// Student functions (unchanged behavior)
+async function loadClasses(){
+  const sel = document.getElementById('classSelect');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  const r = await fetch('/api/list_classes');
+  if(!r.ok){ sel.innerHTML = '<option value="">(failed)</option>'; return; }
+  const list = await r.json();
+  sel.innerHTML = '<option value="">-- Select class --</option>';
+  list.forEach(c => {
+    const o = document.createElement('option'); o.value = c.name; o.text = c.name; sel.appendChild(o);
+  });
 }
-
-tabTeacher.onclick = ()=>{
-  tabTeacher.style.background='#0b5fff'; tabTeacher.style.color='#fff';
-  tabStudent.style.background=''; tabStudent.style.color='';
-  tabAdmin.style.background=''; tabAdmin.style.color='';
-  studentPane.style.display='none'; teacherPane.style.display='block'; adminPane.style.display='none';
-}
-
-tabAdmin.onclick = ()=>{
-  tabAdmin.style.background='#0b5fff'; tabAdmin.style.color='#fff';
-  tabStudent.style.background=''; tabStudent.style.color='';
-  tabTeacher.style.background=''; tabTeacher.style.color='';
-  studentPane.style.display='none'; teacherPane.style.display='none'; adminPane.style.display='block';
-}
-
-document.getElementById('student_continue').addEventListener('click', ()=>{
-  const name = document.getElementById('student_name').value.trim();
-  if(!name){ alert('Enter name'); return; }
-  localStorage.setItem('cbt:student_name', name);
-  window.location.href = '/student';
+document.getElementById('classSelect').addEventListener('change', async function(){
+  const className = this.value;
+  const s = document.getElementById('studentSelect');
+  s.innerHTML = '<option value="">Loading...</option>';
+  if(!className){ s.innerHTML = '<option value="">Select class first</option>'; return; }
+  const r = await fetch('/api/list_class_students?class=' + encodeURIComponent(className));
+  if(!r.ok){ s.innerHTML = '<option value="">(failed)</option>'; return; }
+  const list = await r.json();
+  s.innerHTML = '<option value="">-- Select name --</option>';
+  list.forEach(st => { const o=document.createElement('option'); o.value=st.name; o.text=st.name; s.appendChild(o); });
 });
 
-document.getElementById('teacher_login').addEventListener('click', async ()=>{
-  const name = document.getElementById('teacher_name').value.trim();
-  const pw = document.getElementById('teacher_pw').value;
-  if(!name || !pw){ alert('name & password'); return; }
-  const r = await fetch('/api/login_teacher', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, password: pw})});
-  const js = await r.json().catch(()=>({error:'invalid response'}));
-  if(js.ok){ localStorage.setItem('cbt:teacher_token', js.teacher_token); window.location.href='/teacher'; }
-  else { document.getElementById('teacher_msg').innerText = js.error || 'login failed'; }
-});
+async function loadOpenExams(){
+  const sel = document.getElementById('examSelect');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  const r = await fetch('/api/list_exams');
+  if(!r.ok){ sel.innerHTML = '<option value="">(failed)</option>'; return; }
+  const all = await r.json();
+  const list = all.filter(e => e.started);
+  sel.innerHTML = '<option value="">-- Select test --</option>';
+  list.forEach(e => { const o=document.createElement('option'); o.value=e.id; o.text = e.title + (e.tag ? ' • ' + e.tag : ''); sel.appendChild(o); });
+}
 
-document.getElementById('teacher_register').addEventListener('click', async ()=>{
-  const name = document.getElementById('teacher_name').value.trim();
-  const pw = document.getElementById('teacher_pw').value;
-  const subject = document.getElementById('teacher_subject').value || '';
-  if(!name || !pw){ alert('name & password'); return; }
-  const r = await fetch('/api/register_teacher', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, password: pw, subject})});
-  const js = await r.json().catch(()=>({error:'invalid response'}));
-  if(js.ok){ document.getElementById('teacher_msg').innerText = 'Registered — pending admin approval.'; } else { document.getElementById('teacher_msg').innerText = js.error || 'register failed'; }
-});
+document.getElementById('startBtn').addEventListener('click', async function(){
+  const className = document.getElementById('classSelect').value;
+  const studentName = document.getElementById('studentSelect').value;
+  const examId = document.getElementById('examSelect').value;
+  const msg = document.getElementById('loginMsg');
+  if(!className){ msg.innerText = 'Choose your class'; return; }
+  if(!studentName){ msg.innerText = 'Choose your name'; return; }
+  if(!examId){ msg.innerText = 'Choose a test'; return; }
 
-// load subjects
-(async function loadSubjects(){
-  const sel = document.getElementById('teacher_subject');
-  sel.innerHTML = '<option value="">(select subject)</option>';
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true;
+  msg.innerText = 'Requesting test...';
   try{
-    const r = await fetch('/api/subjects');
-    if(r.ok){
-      const list = await r.json();
-      if(Array.isArray(list)){
-        list.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s; opt.text = s;
-          sel.appendChild(opt);
-        });
-      }
-    }
-  }catch(e){}
-})();
-
-// Admin Login
-document.getElementById('admin_login').addEventListener('click', async () => {
-  const username = document.getElementById('admin_username').value.trim();
-  const password = document.getElementById('admin_pw').value;
-  
-  if(!username || !password) {
-    document.getElementById('admin_msg').innerText = 'Username and password required';
-    return;
-  }
-
-  document.getElementById('admin_msg').innerText = 'Logging in...';
-  
-  try {
-    const response = await fetch('/api/login_admin', {
+    const res = await fetch('/api/start_exam', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        username: username,
-        password: password
-      })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ exam_id: examId, student_name: studentName, class: className })
     });
-    
-    const data = await response.json();
-    
-    if(response.ok && data.ok) {
-      window.location.href = '/admin';
-    } else {
-      document.getElementById('admin_msg').innerText = data.error || 'Login failed';
+    const js = await res.json().catch(()=>({}));
+    if(res.ok && js.token && js.url){
+      window.location.href = js.url;
+      return;
     }
-  } catch(err) {
-    console.error('Login error:', err);
-    document.getElementById('admin_msg').innerText = 'Login request failed';
+    if(js && js.error === 'already_submitted'){
+      msg.innerText = 'You have already submitted this exam.';
+    } else if(js && js.error){
+      msg.innerText = 'Start failed: ' + (js.message || js.error);
+    } else {
+      msg.innerText = 'Start failed: unknown error';
+    }
+  }catch(e){
+    msg.innerText = 'Network error';
+  }finally{
+    btn.disabled = false;
   }
 });
 
-// Add session check on page load
-window.addEventListener('load', async () => {
-  try {
-    const r = await fetch('/api/check_admin');
-    const js = await r.json();
-    if(js.is_admin) {
-      window.location.href = '/admin';
+// Teacher login
+document.getElementById('teacherLoginBtn').addEventListener('click', async () => {
+  const name = document.getElementById('teacherName').value.trim();
+  const pass = document.getElementById('teacherPass').value;
+  const msg = document.getElementById('teacherMsg');
+  if(!name || !pass){ msg.innerText = 'Name and password required'; return; }
+  msg.innerText = 'Signing in...';
+  try{
+    const r = await fetch('/api/login_teacher', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, password: pass})
+    });
+    const js = await r.json().catch(()=>({}));
+    if(r.ok && js.ok && js.teacher_token){
+      localStorage.setItem('teacher_token', js.teacher_token);
+      window.location.href = '/teacher';
+      return;
     }
-  } catch(err) {
-    console.error('Failed to check admin session:', err);
+    msg.innerText = js.message || js.error || 'Login failed';
+  }catch(e){
+    msg.innerText = 'Network error';
   }
 });
+
+// show/hide register UI
+document.getElementById('showTeacherRegister').addEventListener('click', () => {
+  document.getElementById('teacherAuth').style.display = 'none';
+  document.getElementById('teacherRegister').style.display = 'block';
+});
+document.getElementById('cancelTeacherRegister').addEventListener('click', () => {
+  document.getElementById('teacherRegister').style.display = 'none';
+  document.getElementById('teacherAuth').style.display = 'block';
+});
+
+// teacher registration
+document.getElementById('teacherRegisterBtn').addEventListener('click', async () => {
+  const name = (document.getElementById('regTeacherName').value || '').trim();
+  const pass = document.getElementById('regTeacherPass').value || '';
+  const subject = (document.getElementById('regTeacherSubject').value || '').trim();
+  const msg = document.getElementById('teacherRegMsg');
+  if(!name || !pass){ msg.innerText = 'Name and password required'; return; }
+  msg.innerText = 'Registering...';
+  try{
+    const r = await fetch('/api/register_teacher', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, password: pass, subject })
+    });
+    const js = await r.json().catch(()=>({}));
+    if(r.ok && js.ok){
+      msg.innerText = 'Registered — awaiting admin approval';
+      // reset and show login
+      document.getElementById('regTeacherName').value = '';
+      document.getElementById('regTeacherPass').value = '';
+      document.getElementById('regTeacherSubject').value = '';
+      setTimeout(()=> {
+        document.getElementById('teacherRegister').style.display = 'none';
+        document.getElementById('teacherAuth').style.display = 'block';
+        document.getElementById('teacherMsg').innerText = 'Registration submitted — await approval';
+      }, 1200);
+      return;
+    }
+    msg.innerText = js.error || js.message || 'Registration failed';
+  }catch(e){
+    msg.innerText = 'Network error';
+  }
+});
+
+// Admin login
+document.getElementById('adminLoginBtn').addEventListener('click', async () => {
+  const user = document.getElementById('adminUser').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const msg = document.getElementById('adminMsg');
+  if(!user || !pass){ msg.innerText = 'Username and password required'; return; }
+  msg.innerText = 'Signing in...';
+  try{
+    const r = await fetch('/api/login_admin', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username: user, password: pass})
+    });
+    const js = await r.json().catch(()=>({}));
+    if(r.ok && js.ok){
+      // redirect to admin page (session cookie set by server)
+      window.location.href = '/admin';
+      return;
+    }
+    msg.innerText = js.message || js.error || 'Login failed';
+  }catch(e){
+    msg.innerText = 'Network error';
+  }
+});
+
+loadClasses(); loadOpenExams();
 </script>
 {% endblock %}
