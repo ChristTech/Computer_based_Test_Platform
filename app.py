@@ -38,6 +38,20 @@ try:
 except Exception:
     pd = None
 
+
+def fix_subject_data(data, subject):
+    """
+    Ensures the CSV/XLSX data contains the correct subject name.
+    If the DB returned the wrong subject (e.g. 'Computer Science'),
+    we replace it with the provided subject parameter.
+    """
+    corrected = []
+    for d in data:
+        d['subject'] = subject or d.get('subject', '')
+        corrected.append(d)
+    return corrected
+
+
 BASE_DIR = os.path.dirname(__file__)
 DB = os.path.join(BASE_DIR, 'cbt.db')
 
@@ -1512,10 +1526,13 @@ def download_subject():
             'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
         })
 
+    data = fix_subject_data(data, subject)
+
     # xlsx export
     if fmt == 'xlsx' and pd:
         try:
             # reduce to required columns only
+            data = fix_subject_data(data, subject)
             rows_simple = [{'subject': d.get('subject',''), 'name': d.get('name',''), 'score': d.get('score','')} for d in data]
             df = pd.DataFrame(rows_simple)
             mem = io.BytesIO()
