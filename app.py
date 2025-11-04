@@ -342,14 +342,26 @@ def list_exams():
     return jsonify(out)
 
 @app.route('/api/questions/<exam_id>')
+@app.route('/api/questions/<exam_id>')
 def get_questions(exam_id):
-    conn = db_conn(); c = conn.cursor()
-    c.execute('SELECT id,question,choices,answer_index FROM questions WHERE exam_id=?', (exam_id,))
-    rows = c.fetchall(); conn.close()
+    conn = db_conn()
+    c = conn.cursor()
+    c.execute('SELECT id, question, choices, answer_index, image_path FROM questions WHERE exam_id=?', (exam_id,))
+    rows = c.fetchall()
+    conn.close()
+
     qs = []
     for r in rows:
-        qs.append({'id': r['id'], 'question': r['question'], 'choices': json.loads(r['choices'] or '[]'), 'answer_index': r['answer_index']})
+        qs.append({
+            'id': r['id'],
+            'question': r['question'],
+            'choices': json.loads(r['choices'] or '[]'),
+            'answer_index': r['answer_index'],
+            'image_path': r['image_path'] or ''
+        })
     return jsonify(qs)
+
+
 
 @app.route('/api/upload_questions', methods=['POST'])
 def upload_questions():
@@ -428,8 +440,10 @@ def upload_questions():
                 if 'image' in df.columns:
                     image_val = str(row.get('image')).strip()
                     if image_val:
-                        filename = os.path.basename(image_val)
-                        image_col = image_map.get(filename, '')
+                        filename = os.path.basename(image_val).strip().lower().replace(' ', '_')
+                        # make map keys lowercase for easy match
+                        image_map_lower = {k.lower(): v for k, v in image_map.items()}
+                        image_col = image_map_lower.get(filename, '')
 
                 # ✅ Add image path into each entry
                 entries.append((str(question).strip(), choices, int(answer_index), image_col))
@@ -524,7 +538,6 @@ def upload_questions():
         c.execute('DELETE FROM questions WHERE exam_id=?', (exam_id,))
     
     for e in entries:
-        # backward compatible: handle tuples of 3 or 4
         if len(e) == 4:
             question, choices, answer_index, image_ref = e
         else:
@@ -534,25 +547,20 @@ def upload_questions():
         if not question or len(choices) < 2:
             continue
 
-        # ✅ save uploaded image if any matches filename
-        image_path = None
-        uploaded_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'questions')
-        os.makedirs(uploaded_dir, exist_ok=True)
-
-        if image_ref:
-            for f in image_files:
-                if f.filename == image_ref:
-                    safe_name = secure_filename(f.filename)
-                    save_path = os.path.join(uploaded_dir, safe_name)
-                    f.save(save_path)
-                    image_path = f'/static/uploads/questions/{safe_name}'
-                    break
+        # ✅ Directly use the image path we already mapped
+        image_path = image_ref if image_ref else None
 
         qid = str(uuid.uuid4())[:8]
         now = int(time.time())
-        c.execute('INSERT INTO questions (id,exam_id,question,choices,answer_index,image_path) VALUES (?,?,?,?,?,?)',
+        c.execute('INSERT INTO questions (id, exam_id, question, choices, answer_index, image_path) VALUES (?,?,?,?,?,?)',
                 (qid, exam_id, question, json.dumps(choices), int(answer_index), image_path))
         inserted += 1
+
+
+    print("IMAGE MAP:", image_map)
+    print("ROW IMAGE:", image_val, "→", image_map.get(filename))
+
+
 
     conn.commit(); conn.close()
     app.logger.info("Uploaded %d questions to exam %s by teacher=%s", inserted, exam_id, teacher['id'] if teacher else '-')
