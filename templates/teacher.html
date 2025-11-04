@@ -1,97 +1,190 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Teacher</title>
+<title>Teacher · CBT</title>
 <style>
-:root{--muted:#6b7280;--accent:#0b5fff;--danger:#ef4444}
-body{font-family:Inter,system-ui,Arial;margin:0;background:#f7fbff}
-.header{background:#fff;border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
-.header a{color:var(--accent);text-decoration:none;margin-right:12px}
-.container{max-width:980px;margin:24px auto;padding:16px}
-.card{background:#fff;padding:16px;border-radius:8px}
-.row{display:flex;gap:12px;align-items:center}
-input,textarea,select,button{font-size:14px;padding:8px;border-radius:6px;border:1px solid #e6eefc}
-button{background:var(--accent);color:#fff;border:none;cursor:pointer}
-button:disabled{opacity:0.6;cursor:not-allowed}
-button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accent)}
-.small{color:var(--muted);font-size:13px}
-.preview{margin-top:8px;border:1px dashed #e6eefc;padding:8px;border-radius:6px;background:#fbfdff}
-.error{background:#fef2f2;border-color:#ef4444}
-.success{background:#ecfdf5;border-color:#10b981;color:#059669}
-.scores-table { width:100%; border-collapse: collapse; margin-top:8px; font-size:14px; }
-.scores-table th, .scores-table td { padding:12px; text-align:left; border-bottom:1px solid #eef4ff; }
-.scores-table th { background:#fbfdff; font-weight:600; color:var(--accent); }
-.scores-table tr:hover { background:#fbfdff; }
-.scores-table tbody tr:nth-child(even) { background:#fafbff; }
-.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; }
-.status-pass { background:#ecfdf5; color:#059669; }
-.status-fail { background:#fef2f2; color:var(--danger); }
-#scoresSummary { margin-bottom:12px; font-weight:500; color:var(--accent); }
+:root {
+  --bg: #f8fbff;
+  --card-bg: #ffffff;
+  --muted: #6b7280;
+  --accent: #0b5fff;
+  --danger: #ef4444;
+  --success: #059669;
+  --border: #e6eefc;
+  --shadow: 0 4px 16px rgba(11, 37, 64, 0.08);
+}
+
+body {
+  font-family: "Inter", system-ui, Arial;
+  background: var(--bg);
+  color: #0b2540;
+  margin: 0;
+}
+
+.header {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: var(--shadow);
+}
+.header a {
+  color: var(--accent);
+  text-decoration: none;
+  margin-right: 14px;
+  font-weight: 500;
+}
+.header a:hover {
+  text-decoration: underline;
+}
+.small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.container {
+  max-width: 960px;
+  margin: 30px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+
+h2, h3 {
+  color: var(--accent);
+  margin-top: 0;
+}
+h3 {
+  margin-top: 24px;
+  font-size: 1.1rem;
+  border-left: 4px solid var(--accent);
+  padding-left: 8px;
+}
+
+input, select, button {
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+button:hover {
+  background: #004ed9;
+  transform: translateY(-1px);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+button.link-btn {
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent);
+}
+button.link-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.form-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+#uploadQuestionsInfo {
+  font-size: 14px;
+  margin-top: 6px;
+}
+.success {
+  color: var(--success);
+}
+.error {
+  color: var(--danger);
+}
+
+.preview-box {
+  display: none;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+footer {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 30px;
+  padding: 10px 0;
+}
 </style>
 </head>
 <body>
   {% extends "base.html" %}
   {% block title %}Teacher · CBT{% endblock %}
   {% block content %}
-  <style>
-:root{--muted:#6b7280;--accent:#0b5fff;--danger:#ef4444}
-.header{background:#fff;border-bottom:1px solid #eef4ff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
-.header a{color:var(--accent);text-decoration:none;margin-right:12px}
-.container{max-width:980px;margin:24px auto;padding:16px}
-.card{background:#fff;padding:16px;border-radius:8px}
-.row{display:flex;gap:12px;align-items:center}
-input,textarea,select,button{font-size:14px;padding:8px;border-radius:6px;border:1px solid #e6eefc}
-button{background:var(--accent);color:#fff;border:none;cursor:pointer}
-button:disabled{opacity:0.6;cursor:not-allowed}
-button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accent)}
-.small{color:var(--muted);font-size:13px}
-.preview{margin-top:8px;border:1px dashed #e6eefc;padding:8px;border-radius:6px;background:#fbfdff}
-.error{background:#fef2f2;border-color:#ef4444}
-.success{background:#ecfdf5;border-color:#10b981;color:#059669}
-.scores-table { width:100%; border-collapse: collapse; margin-top:8px; font-size:14px; }
-.scores-table th, .scores-table td { padding:12px; text-align:left; border-bottom:1px solid #eef4ff; }
-.scores-table th { background:#fbfdff; font-weight:600; color:var(--accent); }
-.scores-table tr:hover { background:#fbfdff; }
-.scores-table tbody tr:nth-child(even) { background:#fafbff; }
-.status-badge { padding:4px 8px; border-radius:4px; font-size:12px; font-weight:500; }
-.status-pass { background:#ecfdf5; color:#059669; }
-.status-fail { background:#fef2f2; color:var(--danger); }
-#scoresSummary { margin-bottom:12px; font-weight:500; color:var(--accent); }
-</style>
-
-<div class="header">
-  <div><a href="/"><strong>CBT</strong></a><a href="/teacher">Teacher</a><a href="/admin">Admin</a></div>
-  <div class="small">Signed in: <span id="teacherName">-</span></div>
-</div>
-
-<div class="container">
-  <div class="card">
-    <h2>Teacher</h2>
-    <p class="small">Create exams and bulk-upload questions. You will be prompted to overwrite or append if questions already exist.</p>
-
-    <h3 style="margin-top:12px">Create exam</h3>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input id="teacherCreateTitle" placeholder="Exam title" style="flex:1;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <input id="teacherCreateDuration" type="number" value="30" style="width:110px;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <input id="teacherCreateTag" placeholder="Tag (optional)" style="width:180px;padding:8px;border-radius:6px;border:1px solid #e6eefc"/>
-      <button id="teacherCreate" class="btn">Create</button>
+  
+  <div class="header">
+    <div>
+      <a href="/"><strong>CBT</strong></a>
+      <a href="/teacher">Teacher</a>
+      <a href="/admin">Admin</a>
     </div>
-
-    <h3 style="margin-top:12px">Bulk upload questions (CSV / XLSX / DOCX)</h3>
-    <form id="uploadQuestionsForm" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls,.docx" required />
-      <input id="imageFiles" type="file" name="images" accept="image/*" multiple />
-      <select id="uqExamSelect" style="min-width:260px"></select>
-      <button id="uploadBtn" type="submit" class="btn">Upload Questions</button>
-      <button id="previewBtn" type="button" class="link-btn">Preview</button>
-    </form>
-
-    <div id="uploadQuestionsInfo" class="small" style="margin-top:8px"></div>
-    <div id="previewTable" class="small" style="margin-top:8px;display:none;max-height:260px;overflow:auto;border:1px dashed #e6eefc;padding:8px;border-radius:6px"></div>
+    <div class="small">Signed in as: <span id="teacherName">-</span></div>
   </div>
-</div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Teacher Dashboard</h2>
+      <p class="small">Create exams, upload questions (with images), and manage your assessments.</p>
+
+      <h3>Create a New Exam</h3>
+      <div class="form-section">
+        <input id="teacherCreateTitle" placeholder="Exam title" style="flex:1">
+        <input id="teacherCreateDuration" type="number" value="30" min="1" style="width:100px">
+        <input id="teacherCreateTag" placeholder="Tag (optional)" style="width:160px">
+        <button id="teacherCreate">Create Exam</button>
+      </div>
+
+      <h3>Bulk Upload Questions</h3>
+      <form id="uploadQuestionsForm" enctype="multipart/form-data" class="form-section">
+        <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls,.docx" required>
+        <input id="imageFiles" type="file" name="images" accept="image/*" multiple>
+        <select id="uqExamSelect" required style="min-width:250px"></select>
+        <button id="uploadBtn" type="submit">Upload</button>
+        <button id="previewBtn" type="button" class="link-btn">Preview</button>
+      </form>
+
+      <div id="uploadQuestionsInfo" class="small"></div>
+      <div id="previewTable" class="preview-box"></div>
+    </div>
+  </div>
+
+  <footer>CBT Teacher Portal · Powered by CHRISTTech</footer>
 
 <script>
 function teacherToken(){ return localStorage.getItem('cbt:teacher_token'); }
@@ -107,84 +200,84 @@ async function loadExams(){
     sel.appendChild(opt);
   });
 }
+
 document.getElementById('teacherCreate').addEventListener('click', async ()=>{
   const title = document.getElementById('teacherCreateTitle').value.trim();
   const duration = Number(document.getElementById('teacherCreateDuration').value) || 30;
   const tag = document.getElementById('teacherCreateTag').value.trim() || undefined;
-  if(!title){ alert('enter title'); return; }
-  const res = await fetch('/api/teacher_create_exam', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Teacher-Token': teacherToken() }, body: JSON.stringify({ title, duration, tag })});
+  if(!title){ alert('Please enter a title'); return; }
+  const res = await fetch('/api/teacher_create_exam', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-Teacher-Token': teacherToken() },
+    body: JSON.stringify({ title, duration, tag })
+  });
   const js = await res.json();
-  if(js.ok){ alert('Created exam: ' + js.exam_id); loadExams(); } else alert(js.error || 'failed');
+  if(js.ok){ alert('Exam created: ' + js.exam_id); loadExams(); }
+  else alert(js.error || 'Failed to create exam');
 });
 
 document.getElementById('uploadQuestionsForm').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const sel = document.getElementById('uqExamSelect');
-  if(!sel || !sel.value){ alert('Select exam'); return; }
   const fileInput = document.getElementById('fileInput');
-  if(!fileInput.files.length){ alert('Choose a file'); return; }
   const info = document.getElementById('uploadQuestionsInfo');
   const uploadBtn = document.getElementById('uploadBtn');
-  uploadBtn.disabled = true; uploadBtn.innerText = 'Uploading...';
-  info.innerText = 'Uploading...';
+  if(!sel.value || !fileInput.files.length){ alert('Select exam and file'); return; }
 
-  // check existing questions count
+  uploadBtn.disabled = true; uploadBtn.innerText = 'Uploading...';
+  info.textContent = 'Uploading...';
+
   let overwrite = false;
   try{
     const qres = await fetch('/api/questions/' + sel.value, { headers: {'X-Teacher-Token': teacherToken()} });
     if(qres.ok){
       const qjs = await qres.json();
       if(qjs && qjs.length > 0){
-        overwrite = confirm(`This exam already has ${qjs.length} question(s).\nPress OK to OVERWRITE them, Cancel to APPEND.`);
+        overwrite = confirm(`Exam already has ${qjs.length} question(s).\nOK to overwrite, Cancel to append.`);
       }
     }
-  }catch(e){ /* ignore, default to append */ }
+  }catch(e){}
 
   const fd = new FormData();
   fd.append('file', fileInput.files[0]);
   fd.append('exam_id', sel.value);
   fd.append('overwrite', overwrite ? '1' : '0');
-  const imageInput = document.getElementById('imageFiles');
-  
-  if (imageInput && imageInput.files.length > 0) {
-    for (const img of imageInput.files) {
-      fd.append('images', img);
-    }
-  }
 
+  const imageInput = document.getElementById('imageFiles');
+  if(imageInput && imageInput.files.length > 0){
+    for(const img of imageInput.files){ fd.append('images', img); }
+  }
 
   try{
     const headers = {}; const tk = teacherToken(); if(tk) headers['X-Teacher-Token'] = tk;
     const res = await fetch('/api/upload_questions', { method:'POST', body: fd, headers });
     const json = await res.json().catch(()=>({ok: res.ok}));
     if(json && json.ok){
-      info.style.color = '#059669';
-      info.innerText = `Imported ${json.count} questions`;
-      document.getElementById('previewTable').style.display = 'none';
+      info.className = 'small success';
+      info.textContent = `Successfully imported ${json.count} question(s).`;
       fileInput.value = '';
-    }else{
-      info.style.color = '#ef4444';
-      info.innerText = 'Upload failed: ' + (json.error || 'server error');
+      document.getElementById('previewTable').style.display = 'none';
+    } else {
+      info.className = 'small error';
+      info.textContent = 'Upload failed: ' + (json.error || 'Server error');
     }
   }catch(e){
-    info.style.color = '#ef4444';
-    info.innerText = 'Upload failed (network)';
-    console.error(e);
-  } finally {
-    uploadBtn.disabled = false; uploadBtn.innerText = 'Upload Questions';
+    info.className = 'small error';
+    info.textContent = 'Upload failed (network error)';
+  }finally{
+    uploadBtn.disabled = false; uploadBtn.innerText = 'Upload';
   }
 });
 
 document.getElementById('previewBtn').addEventListener('click', async ()=>{
   const fileInput = document.getElementById('fileInput');
   const preview = document.getElementById('previewTable');
-  const info = document.getElementById('uploadQuestionsInfo');
-  preview.style.display = 'block';
-  info.innerText = '';
-  if(!fileInput.files.length){ preview.innerText = 'No file'; return; }
+  if(!fileInput.files.length){ preview.innerText = 'No file selected'; preview.style.display='block'; return; }
   const file = fileInput.files[0];
   const name = file.name.toLowerCase();
+  preview.style.display = 'block';
   preview.innerText = 'Parsing preview...';
+
   try{
     if(name.endsWith('.csv') || name.endsWith('.txt')){
       const text = await file.text();
@@ -192,17 +285,15 @@ document.getElementById('previewBtn').addEventListener('click', async ()=>{
       if(rows.length===0){ preview.innerText='No rows'; return; }
       const header = rows[0].split(',').map(s=>s.trim());
       const sample = rows.slice(1,7).map(r=> r.split(',').map(s=>s.trim()).slice(0,6));
-      let html = `<div><strong>Detected columns:</strong> ${header.join(', ')}</div><pre style="white-space:pre-wrap;margin-top:8px">`;
+      let html = `<strong>Detected columns:</strong> ${header.join(', ')}<br><pre>`;
       sample.forEach(r=> html += r.join(' | ') + '\n');
       html += '</pre>';
       preview.innerHTML = html;
-    }else if((name.endsWith('.xlsx') || name.endsWith('.xls')) && window.FileReader){
-      preview.innerText = 'Preview for Excel not available in-browser. Upload to server preview if needed.';
     }else{
       preview.innerText = 'Preview not available for this file type.';
     }
   }catch(e){
-    preview.innerText = 'Preview failed';
+    preview.innerText = 'Preview failed.';
   }
 });
 

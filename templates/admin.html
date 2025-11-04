@@ -48,6 +48,19 @@ body{font-family:Inter,system-ui,Arial;margin:20px;background:#f7fbff}
 
     <hr style="margin:12px 0"/>
 
+    <hr style="margin:12px 0"/>
+
+    <h3>Download Class Results</h3>
+    <div class="small" style="margin-top:8px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="classInput" placeholder="Enter class (e.g. SS1)" 
+              style="padding:8px;border-radius:6px;border:1px solid #e6eefc;flex:1;min-width:200px">
+        <button id="downloadResultsBtn" class="link-btn">Download Excel</button>
+      </div>
+      <div id="downloadStatus" class="small" style="margin-top:6px;color:#6b7280;"></div>
+    </div>
+
+
     <h3>Classes</h3>
     <div class="small" style="margin-top:8px">
       <div style="margin-bottom:10px">
@@ -298,8 +311,43 @@ document.addEventListener('click', function(ev){
     document.getElementById('createClassBtn').addEventListener('click', createClass);
     document.getElementById('addStudentBtn').addEventListener('click', addStudentToClass);
 
-     loadExams(); loadPending();
-     loadClassesAdmin();
+    loadExams(); loadPending();
+    loadClassesAdmin();
+    // --- Download All Results per Class ---
+    document.getElementById('downloadResultsBtn').addEventListener('click', async ()=>{
+      const cls = document.getElementById('classInput').value.trim();
+      const status = document.getElementById('downloadStatus');
+      if(!cls){ alert('Enter a class name'); return; }
+
+      status.textContent = 'Preparing Excel file...';
+      status.style.color = '#6b7280';
+
+      try{
+        const res = await fetch(`/api/admin/download_results?class=${encodeURIComponent(cls)}`);
+        if(!res.ok){
+          const err = await res.json().catch(()=>({error:'Server error'}));
+          status.textContent = 'Error: ' + (err.error || 'Unknown');
+          status.style.color = '#ef4444';
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${cls}_All_Results.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        status.textContent = 'Download started.';
+        status.style.color = '#059669';
+      }catch(e){
+        console.error(e);
+        status.textContent = 'Failed to download results.';
+        status.style.color = '#ef4444';
+      }
+    });
+
+
+
    </script>
 {% endblock %}
 </body>

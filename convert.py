@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 # Specify the folder path containing the text files
-folder_path = "C:/Users/adebi/Desktop/TGGA/1st term/Exam questions"  # Replace with the actual folder path
+folder_path = "C:/Users/adebi/Desktop/TGGA/1st term/Third C.A test"  # Replace with the actual folder path
 
 # Ensure the folder exists
 if not os.path.isdir(folder_path):

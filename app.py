@@ -39,6 +39,9 @@ try:
 except Exception:
     pd = None
 
+from io import BytesIO
+from flask import send_file
+
 
 def fix_subject_data(data, subject):
     """
@@ -315,6 +318,57 @@ def add_question():
     log_audit('add_question', teacher['id'], exam_id, {'question_id': qid, 'answer_index': answer_index})
     return jsonify({'ok': True, 'question_id': qid})
 
+# @app.route('/api/admin/download_results')
+# def download_results():
+#     class_name = request.args.get('class')
+#     if not class_name:
+#         return jsonify({'error': 'Missing class name'}), 400
+
+#     conn = db_conn()
+#     c = conn.cursor()
+#     # Fetch all exams for that class (adjust field if you store class info elsewhere)
+#     c.execute("SELECT id, title FROM exams WHERE tag LIKE ? OR title LIKE ?", (f'%{class_name}%', f'%{class_name}%'))
+#     exams = c.fetchall()
+#     if not exams:
+#         conn.close()
+#         return jsonify({'error': f'No exams found for class {class_name}'}), 404
+
+#     exam_ids = [e['id'] for e in exams]
+#     exam_titles = {e['id']: e['title'] for e in exams}
+
+#     # Fetch results for all these exams
+#     q_marks = ','.join('?' * len(exam_ids))
+#     c.execute(f"SELECT name, exam_id, score FROM results WHERE exam_id IN ({q_marks})", exam_ids)
+#     results = c.fetchall()
+#     conn.close()
+
+#     if not results:
+#         return jsonify({'error': 'No results found'}), 404
+
+#     # Organize results
+#     data = {}
+#     for r in results:
+#         name = r['name']
+#         exam_title = exam_titles.get(r['exam_id'], r['exam_id'])
+#         if name not in data:
+#             data[name] = {}
+#         data[name][exam_title] = r['score']
+
+#     # Build DataFrame
+#     all_subjects = sorted({exam_titles[eid] for eid in exam_ids})
+#     df = pd.DataFrame.from_dict(data, orient='index', columns=all_subjects).fillna('')
+#     df.index.name = 'Student Name'
+#     df.reset_index(inplace=True)
+
+#     # Write Excel to memory
+#     output = BytesIO()
+#     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+#         df.to_excel(writer, index=False, sheet_name=f'{class_name}_Results')
+#     output.seek(0)
+
+#     filename = f"{class_name}_All_Results.xlsx"
+#     return send_file(output, as_attachment=True, download_name=filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
 @app.route('/api/list_exams')
 def list_exams():
     conn = db_conn(); c = conn.cursor()
@@ -556,12 +610,6 @@ def upload_questions():
                 (qid, exam_id, question, json.dumps(choices), int(answer_index), image_path))
         inserted += 1
 
-
-    print("IMAGE MAP:", image_map)
-    print("ROW IMAGE:", image_val, "→", image_map.get(filename))
-
-
-
     conn.commit(); conn.close()
     app.logger.info("Uploaded %d questions to exam %s by teacher=%s", inserted, exam_id, teacher['id'] if teacher else '-')
 
@@ -655,22 +703,53 @@ ensure_column('sessions', 'question_order', 'TEXT')
 
 @app.route('/exam/<token>')
 def exam_page(token):
-    conn = db_conn(); c = conn.cursor()
-    c.execute('SELECT exam_id,start_time,end_time,question_state FROM sessions WHERE token=?', (token,))
+    conn = db_conn()
+    c = conn.cursor()
+    c.execute('SELECT exam_id, start_time, end_time, question_state FROM sessions WHERE token=?', (token,))
     row = c.fetchone()
     if not row:
-        conn.close(); abort(404, description="Invalid token")
+        conn.close()
+        abort(404, description="Invalid token")
+
     exam_id = row['exam_id']
     end_time = row['end_time'] if 'end_time' in row.keys() else None
-    qs = []
+
+    # Load the saved question state from sessions
     try:
         qs = json.loads(row['question_state'] or '[]')
     except Exception:
         qs = []
+
+    # --- 🔧 Add this part: fetch image paths from the questions table ---
+    image_map = {}
+    try:
+        c.execute("SELECT id, image_path FROM questions WHERE exam_id=?", (exam_id,))
+        for r in c.fetchall():
+            image_map[str(r['id'])] = r['image_path'] or ''
+    except Exception as e:
+        print("Error fetching image paths:", e)
+
+    # Merge image_path into each question
+    for q in qs:
+        qid = str(q.get('id'))
+        if qid in image_map:
+            q['image_path'] = image_map[qid]
+        else:
+            q.setdefault('image_path', '')
+
     conn.close()
+
+    # Calculate remaining time
     remaining = max(0, int(end_time - int(time.time()))) if end_time else 0
-    # render page with questions exactly as stored
-    return render_template('exam.html', token=token, title=exam_id, questions=qs, remaining_seconds=remaining)
+
+    # Render the exam page with updated questions (now includes image_path)
+    return render_template(
+        'exam.html',
+        token=token,
+        title=exam_id,
+        questions=qs,
+        remaining_seconds=remaining
+    )
 
 @app.route('/api/submit/<token>', methods=['POST'])
 def submit(token):
@@ -886,8 +965,6 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
                     df.to_csv(fname_tag_csv, index=False)
                 except Exception:
                     pass
-
-            print(f"✅ Saved result for {exam_title} ({exam_id})")
             return
         except Exception:
             app.logger.exception("Failed to write xlsx for exam %s", exam_title)
@@ -1346,6 +1423,89 @@ def api_audit_logs():
 # @app.route('/admin/logs')
 # def admin_logs():
 #     return render_template('admin_logs.html')
+@app.route('/api/admin/download_results')
+@admin_required
+def download_results():
+    """
+    Generate Excel file with all student results per class.
+    Each column = subject, each row = student, each cell = score.
+    """
+    class_name = request.args.get('class', '').strip()
+    if not class_name:
+        return jsonify({'error': 'Class name is required'}), 400
+
+    try:
+        conn = db_conn()
+        c = conn.cursor()
+
+        # Step 1: Fetch all students in the class
+        c.execute("SELECT id, student_name FROM class_students WHERE class_name=?", (class_name,))
+        students = c.fetchall()
+        if not students:
+            conn.close()
+            return jsonify({'error': f'No students found in class {class_name}'}), 404
+
+        # Step 2: Try to fetch results; column names may vary
+        c.execute("""
+            SELECT s.student_name AS student,
+                   e.title AS subject,
+                   COALESCE(e.tag, '') AS tag,
+                   r.*
+            FROM results r
+            JOIN sessions s ON r.token = s.token
+            LEFT JOIN exams e ON s.exam_id = e.id
+        """)
+        results = c.fetchall()
+        conn.close()
+
+        if not results:
+            return jsonify({'error': 'No results found'}), 404
+
+        import pandas as pd
+        from io import BytesIO
+
+        # Step 3: Create DataFrame
+        df = pd.DataFrame(results)
+
+        # Try to find score column automatically
+        possible_score_cols = [col for col in df.columns if col in ('score', 'marks', 'result', 'points')]
+        if not possible_score_cols:
+            return jsonify({'error': 'No score-like column found in results table'}), 400
+        score_col = possible_score_cols[0]
+        df.rename(columns={score_col: 'score'}, inplace=True)
+
+        # Combine subject and tag if available
+        if 'tag' in df.columns and 'subject' in df.columns:
+            df['subject'] = df.apply(
+                lambda x: f"{x['subject']} ({x['tag']})" if x.get('tag') else x['subject'],
+                axis=1
+            )
+            df.drop(columns=['tag'], inplace=True, errors='ignore')
+        elif 'subject' not in df.columns:
+            df['subject'] = 'Unknown Subject'
+
+        # Step 4: Pivot to create wide table (students × subjects)
+        pivot_df = df.pivot_table(index='student', columns='subject', values='score', aggfunc='first')
+        pivot_df = pivot_df.reset_index().fillna('')
+
+        # Step 5: Save as Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            pivot_df.to_excel(writer, index=False, sheet_name=class_name)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f"{class_name}_Results.xlsx"
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/results/<token>')
 def api_get_result(token):
