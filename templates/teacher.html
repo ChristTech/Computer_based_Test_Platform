@@ -80,12 +80,14 @@ button.link-btn{border:1px solid var(--accent);background:#fff;color:var(--accen
     </div>
 
     <h3 style="margin-top:12px">Bulk upload questions (CSV / XLSX / DOCX)</h3>
-    <form id="uploadQuestionsForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center">
+    <form id="uploadQuestionsForm" enctype="multipart/form-data" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       <input id="fileInput" type="file" name="file" accept=".csv,.xlsx,.xls,.docx" required />
+      <input id="imageFiles" type="file" name="images" accept="image/*" multiple />
       <select id="uqExamSelect" style="min-width:260px"></select>
       <button id="uploadBtn" type="submit" class="btn">Upload Questions</button>
       <button id="previewBtn" type="button" class="link-btn">Preview</button>
     </form>
+
     <div id="uploadQuestionsInfo" class="small" style="margin-top:8px"></div>
     <div id="previewTable" class="small" style="margin-top:8px;display:none;max-height:260px;overflow:auto;border:1px dashed #e6eefc;padding:8px;border-radius:6px"></div>
   </div>
@@ -142,6 +144,14 @@ document.getElementById('uploadQuestionsForm').addEventListener('submit', async 
   fd.append('file', fileInput.files[0]);
   fd.append('exam_id', sel.value);
   fd.append('overwrite', overwrite ? '1' : '0');
+  const imageInput = document.getElementById('imageFiles');
+  
+  if (imageInput && imageInput.files.length > 0) {
+    for (const img of imageInput.files) {
+      fd.append('images', img);
+    }
+  }
+
 
   try{
     const headers = {}; const tk = teacherToken(); if(tk) headers['X-Teacher-Token'] = tk;

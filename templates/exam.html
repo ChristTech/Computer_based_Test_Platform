@@ -361,6 +361,18 @@ function render() {
   const div = document.createElement('div');
   div.className = 'question';
   let html = `<div><strong>Q${currentQuestionIndex + 1}.</strong> ${escapeHtml(q.question)}</div>`;
+  if (q.image) {
+    html += `<div><img src="${q.image}" alt="Question image" style="max-width:300px;margin-top:10px;border-radius:8px;"></div>`;
+  }
+  // 👇 show image if the question has one
+  if (q.image_path) {
+    html += `<div style="margin-top:10px">
+              <img src="${q.image_path}"
+                    alt="Question image"
+                    style="max-width:100%;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.1)">
+            </div>`;
+  }
+
   html += '<div style="margin-top:12px">';
   (q.choices || []).forEach((ch, i) => {
     const id = `q_${q.id}_${i}`;
