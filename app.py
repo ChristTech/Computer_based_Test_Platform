@@ -14,6 +14,7 @@ import json
 import time
 from datetime import datetime, timedelta
 from flask import Flask, request, render_template, redirect, url_for, jsonify, send_file, abort, session
+from werkzeug.utils import secure_filename
 import hashlib
 import random
 import docx  # Added for DOCX parsing
@@ -117,8 +118,11 @@ def init_db():
         exam_id TEXT,
         question TEXT,
         choices TEXT,
-        answer_index INTEGER
+        answer_index INTEGER,
+        image TEXT
     )''')
+
+    
     c.execute('''CREATE TABLE IF NOT EXISTS sessions (
         token TEXT PRIMARY KEY,
         exam_id TEXT,
@@ -304,8 +308,9 @@ def add_question():
         conn.close(); return jsonify({'error': 'not allowed to add questions for this exam'}), 403
     qid = str(uuid.uuid4())[:8]
     now = int(time.time())
-    c.execute('INSERT INTO questions (id,exam_id,question,choices,answer_index,created_by,created_at) VALUES (?,?,?,?,?,?,?)',
-              (qid, exam_id, q, json.dumps(choices), answer_index, teacher['id'], now))
+    c.execute('INSERT INTO questions (id, exam_id, question, choices, answer_index, image, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)',
+          (qid, exam_id, q, json.dumps(choices), answer_index, image, teacher['id'], now))
+
     conn.commit(); conn.close()
     log_audit('add_question', teacher['id'], exam_id, {'question_id': qid, 'answer_index': answer_index})
     return jsonify({'ok': True, 'question_id': qid})
@@ -357,6 +362,19 @@ def upload_questions():
     file = request.files.get('file')
     teacher = get_teacher_from_request()
     overwrite = request.form.get('overwrite') == '1'
+    # Handle optional image uploads
+    uploaded_images = request.files.getlist('images')
+    image_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'questions')
+    os.makedirs(image_dir, exist_ok=True)
+    image_map = {}  # filename -> saved_path
+
+    for img in uploaded_images:
+        if img and img.filename:
+            safe_name = secure_filename(img.filename)
+            save_path = os.path.join(image_dir, safe_name)
+            img.save(save_path)
+            image_map[safe_name] = f"/static/uploads/questions/{safe_name}"
+
 
     if not exam_id or not file:
         return jsonify({'error': 'Missing exam_id or file'}), 400
@@ -383,6 +401,8 @@ def upload_questions():
                 question = row.get('question')
                 if not question or (isinstance(question, float) and pd.isna(question)):
                     continue
+
+                # Collect choices
                 choices = []
                 for i in range(1, 10):
                     for key in (f'choice{i}', f'option{i}'):
@@ -390,15 +410,30 @@ def upload_questions():
                         if val and not (isinstance(val, float) and pd.isna(val)):
                             choices.append(str(val))
                 if not choices:
-                    # try columns named choice*
+                    # Try generic columns named "choice*"
                     for col in df.columns:
                         if str(col).lower().startswith('choice') and pd.notna(row.get(col)):
                             choices.append(str(row.get(col)))
+
+                # Answer index
                 answer_index = 0
                 if 'answer_index' in row.index and pd.notna(row.get('answer_index')):
-                    try: answer_index = int(row.get('answer_index'))
-                    except Exception: answer_index = 0
-                entries.append((str(question).strip(), choices, int(answer_index)))
+                    try:
+                        answer_index = int(row.get('answer_index'))
+                    except Exception:
+                        answer_index = 0
+
+                # ✅ Image column check — ADD THIS PART
+                image_col = ''
+                if 'image' in df.columns:
+                    image_val = str(row.get('image')).strip()
+                    if image_val:
+                        filename = os.path.basename(image_val)
+                        image_col = image_map.get(filename, '')
+
+                # ✅ Add image path into each entry
+                entries.append((str(question).strip(), choices, int(answer_index), image_col))
+
         elif ext == '.docx' and Document:
             doc = Document(file)
             current_question = None
@@ -487,15 +522,38 @@ def upload_questions():
     inserted = 0
     if overwrite:
         c.execute('DELETE FROM questions WHERE exam_id=?', (exam_id,))
-    for question, choices, answer_index in entries:
+    
+    for e in entries:
+        # backward compatible: handle tuples of 3 or 4
+        if len(e) == 4:
+            question, choices, answer_index, image_ref = e
+        else:
+            question, choices, answer_index = e
+            image_ref = None
+
         if not question or len(choices) < 2:
             continue
+
+        # ✅ save uploaded image if any matches filename
+        image_path = None
+        uploaded_dir = os.path.join(BASE_DIR, 'static', 'uploads', 'questions')
+        os.makedirs(uploaded_dir, exist_ok=True)
+
+        if image_ref:
+            for f in image_files:
+                if f.filename == image_ref:
+                    safe_name = secure_filename(f.filename)
+                    save_path = os.path.join(uploaded_dir, safe_name)
+                    f.save(save_path)
+                    image_path = f'/static/uploads/questions/{safe_name}'
+                    break
+
         qid = str(uuid.uuid4())[:8]
         now = int(time.time())
-        c.execute('INSERT INTO questions (id,exam_id,question,choices,answer_index,created_by,created_at) VALUES (?,?,?,?,?,?,?)',
-                  (qid, exam_id, question, json.dumps(choices), int(answer_index), teacher['id'] if teacher else None, now))
+        c.execute('INSERT INTO questions (id,exam_id,question,choices,answer_index,image_path) VALUES (?,?,?,?,?,?)',
+                (qid, exam_id, question, json.dumps(choices), int(answer_index), image_path))
         inserted += 1
-        log_audit('add_question', teacher['id'] if teacher else None, exam_id, {'question_id': qid, 'answer_index': answer_index})
+
     conn.commit(); conn.close()
     app.logger.info("Uploaded %d questions to exam %s by teacher=%s", inserted, exam_id, teacher['id'] if teacher else '-')
 
@@ -740,26 +798,36 @@ def _sanitize_filename(s: str) -> str:
     return s[:120] or 'unknown'
 
 def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answers_detail=None):
-    # determine subject label (try DB -> exams -> teacher.subject), fallback to exam_id
-    subject_name = ''
+    """
+    Save results using the exam TITLE instead of the teacher.subject field.
+    Each subject (exam title) will have its own result file.
+    """
+    exam_title = ''
     exam_tag = ''
+
     try:
-        conn = db_conn(); c = conn.cursor()
-        c.execute('SELECT t.subject, e.tag FROM exams e LEFT JOIN teachers t ON e.teacher_id=t.id WHERE e.id=?', (exam_id,))
-        er = c.fetchone()
-        subject_name = (er['subject'] or '').strip() if er and 'subject' in er.keys() else ''
-        exam_tag = (er['tag'] or '').strip() if er and 'tag' in er.keys() else ''
+        conn = db_conn()
+        c = conn.cursor()
+        # ✅ Only use the exam table — ignore teacher.subject completely
+        c.execute('SELECT title, tag FROM exams WHERE id = ?', (exam_id,))
+        row = c.fetchone()
+        if row:
+            exam_title = (row['title'] or '').strip()
+            exam_tag = (row['tag'] or '').strip()
         conn.close()
-    except Exception:
-        subject_name = ''
+    except Exception as e:
+        app.logger.exception("Error fetching exam info for result saving: %s", e)
+        exam_title = f"exam_{exam_id}"
         exam_tag = ''
 
-    subject_label = _sanitize_filename(subject_name or exam_id)
+    # ✅ Build safe filenames based on title/tag
+    subject_label = _sanitize_filename(exam_title or f"exam_{exam_id}")
     tag_label = _sanitize_filename(exam_tag or '')
 
+    # ✅ Build data row
     row = {
         'tag': exam_tag or '',
-        'subject': subject_name or '',
+        'subject': exam_title or '',
         'name': name or '',
         'token': token,
         'score': score,
@@ -767,17 +835,16 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
         'submitted_at': datetime.fromtimestamp(submitted_at).isoformat()
     }
 
-    fname_xlsx = os.path.join(BASE_DIR, f'results_{subject_label}.xlsx')
-    fname_csv = os.path.join(BASE_DIR, f'results_{subject_label}.csv')
-    # also maintain per-tag files for quick downloads
-    fname_tag_xlsx = os.path.join(BASE_DIR, f'results_tag_{tag_label}.xlsx') if tag_label else None
-    fname_tag_csv = os.path.join(BASE_DIR, f'results_tag_{tag_label}.csv') if tag_label else None
-
-    # include answers_detail if present
+    # ✅ Include answers if present
     if answers_detail is not None:
         row['answers_detail'] = json.dumps(answers_detail, ensure_ascii=False)
 
-    # Try XLSX (pandas) and persist to disk so admin can download by subject file
+    # ✅ Save to XLSX & CSV using exam title as file name
+    fname_xlsx = os.path.join(BASE_DIR, f'results_{subject_label}.xlsx')
+    fname_csv = os.path.join(BASE_DIR, f'results_{subject_label}.csv')
+    fname_tag_xlsx = os.path.join(BASE_DIR, f'results_tag_{tag_label}.xlsx') if tag_label else None
+    fname_tag_csv = os.path.join(BASE_DIR, f'results_tag_{tag_label}.csv') if tag_label else None
+
     if pd:
         try:
             df_row = pd.DataFrame([row])
@@ -789,7 +856,10 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
                     df = df_row
             else:
                 df = df_row
+
             df.to_excel(fname_xlsx, index=False)
+
+            # Tag-based copies
             if tag_label:
                 try:
                     if os.path.exists(fname_tag_xlsx):
@@ -800,31 +870,29 @@ def save_result_to_excel(name, token, exam_id, score, total, submitted_at, answe
                     df_tag.to_excel(fname_tag_xlsx, index=False)
                 except Exception:
                     pass
-            # also ensure CSV exists for systems that expect CSV
-            try:
-                df.to_csv(fname_csv, index=False)
-                if tag_label:
-                    try: df.to_csv(fname_tag_csv, index=False)
-                    except Exception: pass
-            except Exception:
-                pass
+
+            # Always keep a CSV version for each
+            df.to_csv(fname_csv, index=False)
+            if tag_label:
+                try:
+                    df.to_csv(fname_tag_csv, index=False)
+                except Exception:
+                    pass
+
+            print(f"✅ Saved result for {exam_title} ({exam_id})")
             return
         except Exception:
-            app.logger.exception("failed to write xlsx for subject %s", subject_label)
+            app.logger.exception("Failed to write xlsx for exam %s", exam_title)
 
-    # CSV fallback / append
+    # Fallback to CSV append
     write_header = not os.path.exists(fname_csv)
-    fieldnames = ['subject','name','token','score','total','submitted_at']
-    if tag_label:
-        fieldnames = ['tag'] + fieldnames
-    if answers_detail is not None:
-        fieldnames.append('answers_detail')
+    fieldnames = list(row.keys())
     with open(fname_csv, 'a', newline='', encoding='utf-8') as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         if write_header:
             writer.writeheader()
         writer.writerow(row)
-    # append to tag CSV as well
+
     if tag_label:
         write_header_t = not os.path.exists(fname_tag_csv)
         with open(fname_tag_csv, 'a', newline='', encoding='utf-8') as fh2:
@@ -1454,16 +1522,19 @@ def download_subject():
             er = c.fetchone()
             if not er:
                 conn.close(); return jsonify({'error': 'exam not found'}), 404
+
             exam_title = (er['title'] or '').strip() if 'title' in er.keys() else ''
             exam_tag = (er['tag'] or '').strip() if 'tag' in er.keys() else ''
             exam_subject = (er['subject'] or '').strip() if 'subject' in er.keys() else ''
-            # prefer explicit subject if provided, else teacher/exam subject/title
-            subject = subject or exam_subject or exam_title
-            label = _sanitize_filename(f"{subject or exam_title}_{exam_tag or ''}_{exam_id}")
+
+            # ✅ prefer exam title for both subject and label
+            subject = subject or exam_title or exam_subject
+            label = _sanitize_filename(f"{exam_title or subject}_{exam_tag or ''}_{exam_id}")
+
             # build query returning rows only for this exam_id
             q = '''
                 SELECT r.token, r.name, r.score, r.total, r.submitted_at, r.answers_detail, e.id AS exam_id,
-                       COALESCE(t.subject,'') AS subject, COALESCE(e.tag,'') AS tag
+                    COALESCE(t.subject,'') AS subject, COALESCE(e.tag,'') AS tag
                 FROM results r
                 JOIN sessions s ON r.token = s.token
                 LEFT JOIN exams e ON s.exam_id = e.id
@@ -1472,6 +1543,7 @@ def download_subject():
                 ORDER BY r.submitted_at DESC
             '''
             params = (exam_id,)
+
         else:
             if not subject:
                 conn.close(); return jsonify({'error': 'subject required (or exam_id must be supplied)'}), 400
@@ -1526,7 +1598,12 @@ def download_subject():
             'answers_detail': json.dumps(answers_detail, ensure_ascii=False)
         })
 
-    data = fix_subject_data(data, subject)
+        # Force subject column to use the exam title instead of teacher.subject
+        for d in data:
+            d['subject'] = exam_title  # overwrite incorrect subject
+
+
+    # data = fix_subject_data(data, subject)
 
     # xlsx export
     if fmt == 'xlsx' and pd:
