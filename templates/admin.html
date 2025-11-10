@@ -89,6 +89,16 @@ body{font-family:Inter,system-ui,Arial;margin:20px;background:#f7fbff}
       <div id="classStudentsList" class="small" style="margin-top:8px">Select a class to view students.</div>
     </div>
   </div>
+
+  <hr style="margin:12px 0;"/>
+  <h3>Upload subject sheets & merge</h3>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input id="mergeClassSelect" type="text" placeholder="(optional) class name" style="padding:8px;border-radius:6px;border:1px solid #e6eefc;min-width:160px"/>
+    <input id="mergeFilesInput" type="file" multiple accept=".xlsx,.xls,.csv,.txt" />
+    <button id="mergeUploadBtn" class="link-btn">Upload & Merge</button>
+    <span id="mergeMsg" class="small" style="margin-left:8px"></span>
+  </div>
+
 </div>
 
 <script>
@@ -124,14 +134,14 @@ async function loadExams(){
       right.style.display='flex'; right.style.gap='8px'; right.style.alignItems='center';
 
       // subject + download button (if subject exists)
-      const subj = e.subject || '';
+      const subj = e.title || '';
       if(subj){
         const subjWrap = document.createElement('div');
         subjWrap.className = 'subject-chip';
         subjWrap.innerHTML = `<span style="font-weight:600">${subj}</span>`;
         const dlBtn = document.createElement('button');
         dlBtn.className = 'link-btn download-subject';
-        dlBtn.dataset.subject = subj;
+        dlBtn.dataset.subject = "subj";
         dlBtn.dataset.exam = e.id;                // pass exam id too
         dlBtn.dataset.format = 'csv';
         dlBtn.innerText = 'Download';
@@ -310,6 +320,63 @@ document.addEventListener('click', function(ev){
 
     document.getElementById('createClassBtn').addEventListener('click', createClass);
     document.getElementById('addStudentBtn').addEventListener('click', addStudentToClass);
+
+    // ADD: Upload & Merge handler
+    document.getElementById('mergeUploadBtn').addEventListener('click', async (ev) => {
+      const filesInput = document.getElementById('mergeFilesInput');
+      const classInput = document.getElementById('mergeClassSelect');
+      const msg = document.getElementById('mergeMsg');
+      msg.innerText = '';
+      if (!filesInput.files.length) {
+        msg.style.color = '#ef4444';
+        msg.innerText = 'Choose one or more files first';
+        return;
+      }
+      const fd = new FormData();
+      for (const f of filesInput.files) fd.append('files', f);
+      const className = (classInput.value || '').trim();
+      if (className) fd.append('class_name', className);
+
+      const uploadBtn = ev.currentTarget;
+      uploadBtn.disabled = true; uploadBtn.innerText = 'Merging...';
+      msg.style.color = '#666'; msg.innerText = 'Uploading files...';
+
+      try {
+        const res = await fetch('/api/upload_merge_class', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const j = await res.json().catch(()=>({error:'server error'}));
+          msg.style.color = '#ef4444';
+          msg.innerText = 'Merge failed: ' + (j.error || res.statusText);
+        } else {
+          // download returned file blob
+          const disposition = res.headers.get('content-disposition') || '';
+          let filename = (className || 'merged') + '_results.xlsx';
+          const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^;"']+)/);
+          if (match) filename = decodeURIComponent(match[1]);
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = filename;
+          document.body.appendChild(a); a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+
+          msg.style.color = '#059669';
+          msg.innerText = 'Merged file downloaded';
+          // clear inputs
+          filesInput.value = '';
+          classInput.value = '';
+        }
+      } catch (e) {
+        console.error(e);
+        msg.style.color = '#ef4444';
+        msg.innerText = 'Network/upload failed';
+      } finally {
+        uploadBtn.disabled = false; uploadBtn.innerText = 'Upload & Merge';
+      }
+    });
+
 
     loadExams(); loadPending();
     loadClassesAdmin();

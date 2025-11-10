@@ -1326,6 +1326,8 @@ def not_found(e):
 def server_error(e):
     return render_template('base_error.html', code=500, message='Internal server error'), 500
 
+
+
 # audit logs JSON endpoint
 @app.route('/api/audit_logs')
 def api_audit_logs():
@@ -1461,8 +1463,6 @@ def download_results():
         if not results:
             return jsonify({'error': 'No results found'}), 404
 
-        import pandas as pd
-        from io import BytesIO
 
         # Step 3: Create DataFrame
         df = pd.DataFrame(results)
@@ -2058,6 +2058,92 @@ def _fmt_datetime(ts, fmt='%Y-%m-%d %H:%M'):
         return s
     except Exception:
         return str(ts)
+    
+# =====================================
+# Admin upload & merge class results
+# =====================================
+
+from flask import send_file, jsonify, request
+
+
+@app.route('/api/upload_merge_class', methods=['POST'])
+def upload_merge_class():
+    """
+    Upload multiple result files (Excel/CSV), merge into one Excel sheet.
+    Subject name is extracted cleanly from the filename (e.g. 'Economics.xlsx' or 'Economics ss rd c.a.csv' -> 'Economics')
+    """
+    files = request.files.getlist('files')
+    class_name = (request.form.get('class_name') or '').strip()
+
+    if not files:
+        return jsonify({'error': 'No files uploaded'}), 400
+
+    def guess_name_col(cols):
+        for c in cols:
+            if any(x in str(c).lower() for x in ['name', 'student']):
+                return c
+        return cols[0]
+
+    def guess_score_col(cols):
+        for c in cols:
+            if any(x in str(c).lower() for x in ['score', 'mark', 'result']):
+                return c
+        if len(cols) > 1:
+            return cols[1]
+        return cols[0]
+
+    merged = None
+
+    for f in files:
+        # Derive clean subject name from filename
+        subject_name = os.path.splitext(f.filename)[0]
+        subject_name = subject_name.replace('_', ' ').strip()
+
+        # Keep only the first word before spaces, or until something like "ss", "rd", etc.
+        parts = subject_name.split()
+        if len(parts) > 0:
+            subject_name = parts[0]
+
+        # Capitalize nicely
+        subject_name = subject_name.capitalize()
+
+        try:
+            try:
+                df = pd.read_excel(f)
+            except Exception:
+                f.stream.seek(0)
+                df = pd.read_csv(f)
+        except Exception as e:
+            return jsonify({'error': f'Failed to read {f.filename}: {e}'}), 400
+
+        df.columns = [str(c).strip() for c in df.columns]
+        name_col = guess_name_col(df.columns)
+        score_col = guess_score_col(df.columns)
+
+        df[name_col] = df[name_col].astype(str).str.strip()
+        df[score_col] = pd.to_numeric(df[score_col], errors='coerce')
+
+        df = df[[name_col, score_col]].rename(columns={name_col: 'student', score_col: subject_name})
+        df = df.set_index('student')
+
+        if merged is None:
+            merged = df
+        else:
+            merged = merged.join(df, how='outer')
+
+    if merged is None or merged.empty:
+        return jsonify({'error': 'No usable data found'}), 400
+
+    merged = merged.reset_index().fillna('')
+
+    out = BytesIO()
+    merged.to_excel(out, index=False)
+    out.seek(0)
+
+    filename = f"{class_name or 'merged'}_results.xlsx"
+    return send_file(out, as_attachment=True,
+                     download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
